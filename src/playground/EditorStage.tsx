@@ -16,6 +16,10 @@ type EditorStageProps = {
   onSelect: (id: string | null) => void
   onChange: (config: FloatUpConfig) => void
   onDelete: (id: string) => void
+  labels: {
+    editItem: (id: string) => string
+    resizeItem: (id: string) => string
+  }
   children?: ReactNode
 }
 
@@ -30,6 +34,7 @@ export function EditorStage({
   onSelect,
   onChange,
   onDelete,
+  labels,
   children,
 }: EditorStageProps) {
   const stageRef = useRef<HTMLDivElement>(null)
@@ -165,7 +170,7 @@ export function EditorStage({
           className={`editor-item${selectedId === item.id ? ' is-selected' : ''}`}
           role="button"
           tabIndex={0}
-          aria-label={`Edit ${item.id}. Use arrow keys to move and Delete to remove.`}
+          aria-label={labels.editItem(item.id)}
           onPointerDown={(event) => startAction(event, item, 'move')}
           onKeyDown={(event) => onItemKeyDown(event, item)}
           style={{
@@ -181,7 +186,7 @@ export function EditorStage({
             <button
               className="editor-resize-handle"
               type="button"
-              aria-label={`Resize ${item.id}`}
+              aria-label={labels.resizeItem(item.id)}
               onPointerDown={(event) => startAction(event, item, 'resize')}
             />
           )}

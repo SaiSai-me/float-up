@@ -7,6 +7,20 @@ export type PlaygroundAsset = {
   fileName: string
 }
 
+export type ImageFileErrorCode = 'unsupported' | 'decode' | 'inspect' | 'opaque' | 'empty' | 'unknown'
+
+export class ImageFileError extends Error {
+  readonly code: ImageFileErrorCode
+  readonly fileName: string
+
+  constructor(fileName: string, code: ImageFileErrorCode) {
+    super(`${fileName}: ${code}`)
+    this.name = 'ImageFileError'
+    this.fileName = fileName
+    this.code = code
+  }
+}
+
 export function getSafeFileStem(fileName: string, fallback: string) {
   const stem = fileName.replace(/\.[^.]+$/, '')
     .normalize('NFKD')
@@ -30,14 +44,14 @@ export async function inspectImageFile(
   occurrence: number,
 ): Promise<PlaygroundAsset> {
   if (!isSupported(file)) {
-    throw new Error(`${file.name}: only transparent PNG and WebP files are supported.`)
+    throw new ImageFileError(file.name, 'unsupported')
   }
 
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch {
-    throw new Error(`${file.name}: the browser could not decode this image.`)
+    throw new ImageFileError(file.name, 'decode')
   }
 
   const maxScanSize = 512
@@ -51,7 +65,7 @@ export async function inspectImageFile(
 
   if (!context) {
     bitmap.close()
-    throw new Error(`${file.name}: this browser cannot inspect the image.`)
+    throw new ImageFileError(file.name, 'inspect')
   }
 
   context.drawImage(bitmap, 0, 0, scanWidth, scanHeight)
@@ -80,11 +94,11 @@ export async function inspectImageFile(
   bitmap.close()
 
   if (!hasTransparency) {
-    throw new Error(`${file.name}: no transparent pixels were found.`)
+    throw new ImageFileError(file.name, 'opaque')
   }
 
   if (maxX < minX || maxY < minY) {
-    throw new Error(`${file.name}: the image appears to be fully transparent.`)
+    throw new ImageFileError(file.name, 'empty')
   }
 
   const visibleBounds: FloatUpVisibleBounds = {

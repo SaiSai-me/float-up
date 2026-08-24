@@ -15,7 +15,15 @@ import {
   type FloatUpItem,
 } from '../float-up'
 import { EditorStage } from './EditorStage'
-import { getSafeFileStem, inspectImageFile, revokeAssets, type PlaygroundAsset } from './imageFiles'
+import {
+  getSafeFileStem,
+  ImageFileError,
+  inspectImageFile,
+  revokeAssets,
+  type ImageFileErrorCode,
+  type PlaygroundAsset,
+} from './imageFiles'
+import { formatNotice, getInitialLocale, messages, type Locale, type Notice } from './i18n'
 
 const baseUrl = import.meta.env.BASE_URL
 
@@ -50,19 +58,18 @@ function makeLayout(assets: PlaygroundAsset[]) {
   return createFloatUpLayout(assets.map((asset) => asset.metadata))
 }
 
-function CenterCard({ editing }: { editing: boolean }) {
+type CenterCopy = (typeof messages)[Locale]['center']
+
+function CenterCard({ editing, copy }: { editing: boolean; copy: CenterCopy }) {
   return (
     <article className={`center-card${editing ? ' is-editing' : ''}`}>
-      <span className="center-eyebrow">OPEN-SOURCE REACT EFFECT</span>
+      <span className="center-eyebrow">{copy.eyebrow}</span>
       <h1>Float Up</h1>
-      <p>Upload transparent images. Let them rise, drift, and settle around your content.</p>
-      <ol aria-label="Workflow">
-        <li><span>1</span> Upload</li>
-        <li><span>2</span> Arrange</li>
-        <li><span>3</span> Edit</li>
-        <li><span>4</span> Export</li>
+      <p>{copy.description}</p>
+      <ol aria-label={copy.workflowLabel}>
+        {copy.steps.map((step, index) => <li key={step}><span>{index + 1}</span> {step}</li>)}
       </ol>
-      {editing && <strong>Reserved content area</strong>}
+      {editing && <strong>{copy.reserved}</strong>}
     </article>
   )
 }
@@ -89,12 +96,13 @@ export function Playground() {
   const [assets, setAssets] = useState<PlaygroundAsset[]>(initialAssets)
   const [config, setConfig] = useState<FloatUpConfig>(initialLayout)
   const [autoConfig, setAutoConfig] = useState<FloatUpConfig>(initialLayout)
+  const [locale, setLocale] = useState<Locale>(getInitialLocale)
   const [editing, setEditing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [errors, setErrors] = useState<string[]>([])
+  const [errors, setErrors] = useState<Array<{ fileName: string; code: ImageFileErrorCode }>>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
-  const [notice, setNotice] = useState('Try the sample, or add your own transparent images.')
+  const [notice, setNotice] = useState<Notice>({ key: 'intro' })
   const floatUpRef = useRef<FloatUpController>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const assetsRef = useRef(assets)
@@ -105,8 +113,21 @@ export function Playground() {
     [assets],
   )
   const selectedItem = config.items.find((item) => item.id === selectedId) ?? null
+  const copy = messages[locale]
 
   useEffect(() => () => revokeAssets(assetsRef.current), [])
+
+  useEffect(() => {
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+    document.title = locale === 'zh'
+      ? 'Float Up — React 漂浮元素动效'
+      : 'Float Up — floating ornaments for React'
+    try {
+      window.localStorage.setItem('float-up-locale', locale)
+    } catch {
+      // The switch still works when browser storage is unavailable.
+    }
+  }, [locale])
 
   const replaceWithAssets = (nextAssets: PlaygroundAsset[]) => {
     revokeAssets(assetsRef.current)
@@ -123,7 +144,7 @@ export function Playground() {
     setIsProcessing(true)
     setErrors([])
     const nextAssets: PlaygroundAsset[] = []
-    const nextErrors: string[] = []
+    const nextErrors: Array<{ fileName: string; code: ImageFileErrorCode }> = []
     const occurrences = new Map<string, number>()
 
     for (let index = 0; index < files.length; index += 1) {
@@ -135,13 +156,15 @@ export function Playground() {
       try {
         nextAssets.push(await inspectImageFile(file, index, occurrence))
       } catch (error) {
-        nextErrors.push(error instanceof Error ? error.message : `${file.name}: unable to inspect this image.`)
+        nextErrors.push(error instanceof ImageFileError
+          ? { fileName: error.fileName, code: error.code }
+          : { fileName: file.name, code: 'unknown' })
       }
     }
 
     if (nextAssets.length > 0) {
       replaceWithAssets(nextAssets)
-      setNotice(`${nextAssets.length} image${nextAssets.length === 1 ? '' : 's'} arranged locally. Nothing was uploaded.`)
+      setNotice({ key: 'arranged', count: nextAssets.length })
     }
     setErrors(nextErrors)
     setIsProcessing(false)
@@ -163,7 +186,7 @@ export function Playground() {
     setSelectedId(null)
     window.scrollTo({ top: 0, behavior: 'auto' })
     window.requestAnimationFrame(() => floatUpRef.current?.replay())
-    setNotice('Replaying the complete 2.8 second rise.')
+    setNotice({ key: 'replaying' })
   }
 
   const runAutoLayout = () => {
@@ -171,13 +194,13 @@ export function Playground() {
     setConfig(next)
     setAutoConfig(next)
     setSelectedId(null)
-    setNotice('A fresh deterministic layout has been applied.')
+    setNotice({ key: 'autoLayout' })
   }
 
   const restoreDemo = () => {
     const demoAssets = createDemoAssets()
     replaceWithAssets(demoAssets)
-    setNotice('The original Float Up demo ornaments are back.')
+    setNotice({ key: 'demoRestored' })
   }
 
   const updateSelected = (updater: (item: FloatUpItem) => FloatUpItem) => {
@@ -214,7 +237,7 @@ export function Playground() {
     setConfig((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
     setAutoConfig((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
     setSelectedId((current) => current === id ? null : current)
-    setNotice('Ornament removed from this layout.')
+    setNotice({ key: 'removed' })
   }
 
   const resetSelected = () => {
@@ -222,7 +245,7 @@ export function Playground() {
     const automatic = autoConfig.items.find((item) => item.id === selectedId)
     if (!automatic) return
     updateSelected(() => ({ ...automatic, target: { ...automatic.target } }))
-    setNotice('This ornament has returned to its automatic position.')
+    setNotice({ key: 'reset' })
   }
 
   const getExportConfig = (): FloatUpConfig => ({
@@ -237,9 +260,10 @@ export function Playground() {
 
   const copyConfig = async () => {
     const exported = getExportConfig()
-    const code = `import { FloatUp, type FloatUpConfig } from './float-up'\nimport './float-up/float-up.css'\n\nconst config: FloatUpConfig = ${JSON.stringify(exported, null, 2)}\n\nexport function Hero() {\n  return (\n    <FloatUp config={config}>\n      <h1>Your central content</h1>\n    </FloatUp>\n  )\n}\n`
+    const centerHeading = locale === 'zh' ? '你的中央内容' : 'Your central content'
+    const code = `import { FloatUp, type FloatUpConfig } from './float-up'\nimport './float-up/float-up.css'\n\nconst config: FloatUpConfig = ${JSON.stringify(exported, null, 2)}\n\nexport function Hero() {\n  return (\n    <FloatUp config={config}>\n      <h1>${centerHeading}</h1>\n    </FloatUp>\n  )\n}\n`
     await copyText(code)
-    setNotice('React config copied. Add the matching files to public/ornaments/.')
+    setNotice({ key: 'copied' })
   }
 
   const downloadConfig = () => {
@@ -250,7 +274,7 @@ export function Playground() {
     anchor.download = 'float-up-layout.json'
     anchor.click()
     URL.revokeObjectURL(url)
-    setNotice('float-up-layout.json downloaded.')
+    setNotice({ key: 'downloaded' })
   }
 
   return (
@@ -267,11 +291,31 @@ export function Playground() {
       onDrop={onDrop}
     >
       <header className="playground-toolbar">
-        <a className="toolbar-brand" href="https://github.com/SaiSai-me/float-up" aria-label="Float Up on GitHub">
+        <a className="toolbar-brand" href="https://github.com/SaiSai-me/float-up" aria-label={copy.githubLabel}>
           <span>↑</span>
           Float Up
         </a>
-        <p className="toolbar-status" role="status">{notice}</p>
+        <div className="language-tabs" role="tablist" aria-label={copy.languageLabel}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={locale === 'zh'}
+            className={locale === 'zh' ? 'is-active' : ''}
+            onClick={() => setLocale('zh')}
+          >
+            中文
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={locale === 'en'}
+            className={locale === 'en' ? 'is-active' : ''}
+            onClick={() => setLocale('en')}
+          >
+            EN
+          </button>
+        </div>
+        <p className="toolbar-status" role="status">{formatNotice(locale, notice)}</p>
         <div className="toolbar-actions">
           <input
             ref={fileInputRef}
@@ -282,9 +326,9 @@ export function Playground() {
             onChange={onFileChange}
           />
           <button className="button button-primary" type="button" disabled={isProcessing} onClick={() => fileInputRef.current?.click()}>
-            {isProcessing ? 'Checking…' : '+ Add images'}
+            {isProcessing ? copy.toolbar.checking : copy.toolbar.addImages}
           </button>
-          <button className="button" type="button" onClick={runAutoLayout} disabled={assets.length === 0}>Auto arrange</button>
+          <button className="button" type="button" onClick={runAutoLayout} disabled={assets.length === 0}>{copy.toolbar.autoArrange}</button>
           <button
             className={`button${editing ? ' is-active' : ''}`}
             type="button"
@@ -295,25 +339,25 @@ export function Playground() {
             }}
             disabled={assets.length === 0}
           >
-            {editing ? 'Done editing' : 'Edit layout'}
+            {editing ? copy.toolbar.doneEditing : copy.toolbar.editLayout}
           </button>
-          <button className="button" type="button" onClick={replay} disabled={assets.length === 0}>↻ Replay</button>
-          <button className="button" type="button" onClick={() => void copyConfig()} disabled={assets.length === 0}>Copy React</button>
-          <button className="button" type="button" onClick={downloadConfig} disabled={assets.length === 0}>Download JSON</button>
+          <button className="button" type="button" onClick={replay} disabled={assets.length === 0}>{copy.toolbar.replay}</button>
+          <button className="button" type="button" onClick={() => void copyConfig()} disabled={assets.length === 0}>{copy.toolbar.copyReact}</button>
+          <button className="button" type="button" onClick={downloadConfig} disabled={assets.length === 0}>{copy.toolbar.downloadJson}</button>
         </div>
       </header>
 
       {errors.length > 0 && (
         <aside className="error-panel" aria-live="polite">
           <div>
-            <strong>Some images were skipped</strong>
-            {errors.map((error) => <p key={error}>{error}</p>)}
+            <strong>{copy.errors.heading}</strong>
+            {errors.map((error, index) => <p key={`${error.fileName}-${error.code}-${index}`}>{error.fileName}: {copy.errors[error.code]}</p>)}
           </div>
-          <button type="button" onClick={() => setErrors([])} aria-label="Dismiss errors">×</button>
+          <button type="button" onClick={() => setErrors([])} aria-label={copy.errors.dismiss}>×</button>
         </aside>
       )}
 
-      <section className="playground-track" aria-label="Float Up playground">
+      <section className="playground-track" aria-label={copy.playgroundLabel}>
         <div className="playground-sticky-stage">
           {editing ? (
             <EditorStage
@@ -323,28 +367,29 @@ export function Playground() {
               onSelect={setSelectedId}
               onChange={setConfig}
               onDelete={deleteItem}
+              labels={copy.editor}
             >
-              <CenterCard editing />
+              <CenterCard editing copy={copy.center} />
             </EditorStage>
           ) : (
             <FloatUp ref={floatUpRef} config={config}>
-              <CenterCard editing={false} />
+              <CenterCard editing={false} copy={copy.center} />
             </FloatUp>
           )}
 
           {editing && (
-            <aside className="editor-inspector" aria-label="Layout editor">
+            <aside className="editor-inspector" aria-label={copy.editor.ariaLabel}>
               <div className="inspector-heading">
                 <div>
-                  <span>LAYOUT EDITOR</span>
-                  <strong>{selectedItem?.id ?? 'Select an ornament'}</strong>
+                  <span>{copy.editor.heading}</span>
+                  <strong>{selectedItem?.id ?? copy.editor.select}</strong>
                 </div>
-                <button type="button" onClick={() => setEditing(false)} aria-label="Close editor">×</button>
+                <button type="button" onClick={() => setEditing(false)} aria-label={copy.editor.close}>×</button>
               </div>
               {selectedItem ? (
                 <>
                   <label>
-                    <span>Size <output>{Math.round(selectedItem.width * 100)}%</output></span>
+                    <span>{copy.editor.size} <output>{Math.round(selectedItem.width * 100)}%</output></span>
                     <input
                       type="range"
                       min="4"
@@ -355,7 +400,7 @@ export function Playground() {
                     />
                   </label>
                   <label>
-                    <span>Rotation <output>{Math.round(selectedItem.rotation)}°</output></span>
+                    <span>{copy.editor.rotation} <output>{Math.round(selectedItem.rotation)}°</output></span>
                     <input
                       type="range"
                       min="-45"
@@ -369,18 +414,18 @@ export function Playground() {
                     <span>X {Math.round(selectedItem.target.x * 100)}%</span>
                     <span>Y {Math.round(selectedItem.target.y * 100)}%</span>
                   </div>
-                  <button className="inspector-button" type="button" onClick={resetSelected}>Reset this item</button>
-                  <button className="inspector-button is-danger" type="button" onClick={() => deleteItem(selectedItem.id)}>Delete item</button>
+                  <button className="inspector-button" type="button" onClick={resetSelected}>{copy.editor.reset}</button>
+                  <button className="inspector-button is-danger" type="button" onClick={() => deleteItem(selectedItem.id)}>{copy.editor.delete}</button>
                 </>
               ) : (
-                <p className="inspector-help">Drag an ornament to move it. Select it to resize, rotate, reset, or delete. Arrow keys move by 0.5%; hold Shift for 2%.</p>
+                <p className="inspector-help">{copy.editor.help}</p>
               )}
-              <button className="inspector-demo" type="button" onClick={restoreDemo}>Restore demo ornaments</button>
+              <button className="inspector-demo" type="button" onClick={restoreDemo}>{copy.editor.restoreDemo}</button>
             </aside>
           )}
 
           <div className="scroll-cue" aria-hidden={editing}>
-            <span>SCROLL TO FLOAT</span>
+            <span>{copy.scrollCue}</span>
             <i>↓</i>
           </div>
         </div>
@@ -388,30 +433,22 @@ export function Playground() {
 
       <section className="project-notes" aria-labelledby="how-it-works">
         <div className="notes-intro">
-          <span>ONE MOTION, YOUR IMAGES</span>
-          <h2 id="how-it-works">From transparent files to a reusable React scene.</h2>
-          <p>Float Up keeps the runtime deliberately small: one animation loop, transform-only motion, deterministic layout, and no uploads.</p>
+          <span>{copy.notes.eyebrow}</span>
+          <h2 id="how-it-works">{copy.notes.title}</h2>
+          <p>{copy.notes.description}</p>
         </div>
         <div className="notes-grid">
-          <article>
-            <b>01</b>
-            <h3>Private by default</h3>
-            <p>PNG and WebP files are decoded, checked, and arranged entirely inside your browser.</p>
-          </article>
-          <article>
-            <b>02</b>
-            <h3>Calm motion</h3>
-            <p>Every object rises under its final X position, with a shared ease-out and a soft mid-flight turn.</p>
-          </article>
-          <article>
-            <b>03</b>
-            <h3>Copy the source</h3>
-            <p>Export versioned JSON or copy typed React configuration, then bring the small component folder into your project.</p>
-          </article>
+          {copy.notes.cards.map((card, index) => (
+            <article key={card.title}>
+              <b>{String(index + 1).padStart(2, '0')}</b>
+              <h3>{card.title}</h3>
+              <p>{card.body}</p>
+            </article>
+          ))}
         </div>
         <div className="notes-footer">
-          <button type="button" onClick={restoreDemo}>Restore demo</button>
-          <a href="https://github.com/SaiSai-me/float-up">View source on GitHub ↗</a>
+          <button type="button" onClick={restoreDemo}>{copy.notes.restoreDemo}</button>
+          <a href="https://github.com/SaiSai-me/float-up">{copy.notes.viewGithub}</a>
         </div>
       </section>
 
@@ -419,8 +456,8 @@ export function Playground() {
         <div className="drop-overlay" aria-hidden="true">
           <div>
             <span>＋</span>
-            <strong>Drop transparent images</strong>
-            <p>PNG or WebP · processed locally</p>
+            <strong>{copy.drop.title}</strong>
+            <p>{copy.drop.detail}</p>
           </div>
         </div>
       )}

@@ -15,6 +15,7 @@ Float Up recreates the upward ornament motion from Tanzengsai's personal homepag
 - Preview with scroll or the 2.8 second Replay action.
 - Copy typed React configuration or download `float-up-layout.json`.
 - Respect `prefers-reduced-motion` automatically.
+- Switch the complete playground between Chinese and English with a persistent language tab.
 
 ## 30-second quick start
 
@@ -160,7 +161,7 @@ Code and the files in `public/demo/` are released under the [MIT License](LICENS
 
 Float Up 把透明图片变成一组从页面底部平静上浮、轻微旋转并落在中央内容四周的装饰元素。
 
-第一版提供 React + TypeScript 源码和在线编辑器，不发布 npm 包。你可以直接上传多张透明 PNG/WebP，自动排版后拖动落点、缩放和旋转，再复制 React 配置或下载 `float-up-layout.json`。图片只在浏览器本地处理，不会上传到服务器。
+第一版提供 React + TypeScript 源码和在线编辑器，不发布 npm 包。你可以通过顶栏 Tab 在中英文之间切换，直接上传多张透明 PNG/WebP，自动排版后拖动落点、缩放和旋转，再复制 React 配置或下载 `float-up-layout.json`。图片只在浏览器本地处理，不会上传到服务器。
 
 快速使用：
 

@@ -105,6 +105,40 @@ input:focus-visible {
   font-size: 18px;
 }
 
+.language-tabs {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: #edf0f6;
+}
+
+.language-tabs button {
+  min-width: 38px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #68728b;
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.language-tabs button:hover {
+  color: #1c69ff;
+}
+
+.language-tabs button.is-active {
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(42, 61, 104, 0.12);
+  color: #1c69ff;
+}
+
 .toolbar-status {
   min-width: 0;
   margin: 0 auto 0 8px;
