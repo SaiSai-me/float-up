@@ -12,7 +12,8 @@ Float Up recreates the upward ornament motion from Tanzengsai's personal homepag
 - Keep image processing private: files never leave your device.
 - Generate a deterministic layout that avoids a central content area.
 - Drag, resize, rotate, reset, and remove ornaments in the editor.
-- Preview with scroll or the 2.8 second Replay action.
+- Draw a cubic Bézier speed curve by dragging two control points, choose presets, and tune Replay duration.
+- Preview with scroll or an adjustable Replay action.
 - Copy typed React configuration or download `float-up-layout.json`.
 - Respect `prefers-reduced-motion` automatically.
 - Switch the complete playground between Chinese and English with a persistent language tab.
@@ -38,6 +39,10 @@ import './float-up/float-up.css'
 const config: FloatUpConfig = {
   version: 1,
   reservedArea: { x: 0.27, y: 0.25, width: 0.46, height: 0.5 },
+  motion: {
+    durationMs: 2800,
+    easing: { x1: 0.22, y1: 1, x2: 0.36, y2: 1 },
+  },
   items: [
     {
       id: 'star',
@@ -83,6 +88,7 @@ type FloatUpProps = {
 ```
 
 - `config` contains the reserved area and every ornament's source, endpoint, size, final rotation, and mid-flight spin.
+- `config.motion` optionally sets Replay duration and a cubic Bézier speed curve. Existing v1 configurations without `motion` use the default gentle 2.8 second curve.
 - `scroll={false}` displays the settled state until Replay is called.
 - `scroll.startOffsetPx` sets the document scroll position where the rise begins.
 - `scroll.distanceVh` sets how many viewport heights complete the rise.
@@ -107,6 +113,20 @@ The layout function normalizes visual size from each file's visible-alpha bounds
 - `rotation` and `spin` use degrees.
 - `reservedArea` uses normalized top-left coordinates plus normalized width and height.
 - Exported configuration uses `version: 1` so future readers can migrate formats safely.
+
+## Visual speed-curve editor
+
+Open **Edit layout** and scroll the inspector to **Speed curve**. The graph is a cubic Bézier editor:
+
+- Drag `P1` and `P2` directly on the canvas.
+- X coordinates stay between `0` and `1`, preserving a valid time mapping.
+- Y coordinates can range from `-0.5` to `1.5`, enabling anticipation and overshoot.
+- Use Gentle, Linear, Ease out, S-curve, or Overshoot presets as starting points.
+- Tune Replay duration from `0.8` to `6.0` seconds.
+- Enter exact control-point coordinates when pointer editing is not precise enough.
+- Click **Preview motion** to leave the editor and replay the current curve immediately.
+
+The curve affects both scroll-linked progress and Replay. `durationMs` affects Replay only; scroll duration remains controlled by `scroll.distanceVh`. Motion settings are included in copied React configuration and downloaded JSON.
 
 ## Image guidelines
 
@@ -161,7 +181,7 @@ Code and the files in `public/demo/` are released under the [MIT License](LICENS
 
 Float Up 把透明图片变成一组从页面底部平静上浮、轻微旋转并落在中央内容四周的装饰元素。
 
-第一版提供 React + TypeScript 源码和在线编辑器，不发布 npm 包。你可以通过顶栏 Tab 在中英文之间切换，直接上传多张透明 PNG/WebP，自动排版后拖动落点、缩放和旋转，再复制 React 配置或下载 `float-up-layout.json`。图片只在浏览器本地处理，不会上传到服务器。
+第一版提供 React + TypeScript 源码和在线编辑器，不发布 npm 包。你可以通过顶栏 Tab 在中英文之间切换，直接上传多张透明 PNG/WebP，自动排版后拖动落点、缩放和旋转；还可以在编辑模式中拖动两个控制点绘制三次贝塞尔速度曲线、选择预设、调整重播时长，再复制 React 配置或下载 `float-up-layout.json`。图片只在浏览器本地处理，不会上传到服务器。
 
 快速使用：
 

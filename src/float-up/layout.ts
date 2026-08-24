@@ -5,6 +5,7 @@ import type {
   FloatUpLayoutOptions,
   FloatUpReservedArea,
 } from './types'
+import { DEFAULT_MOTION } from './easing'
 
 export const DEFAULT_RESERVED_AREA: FloatUpReservedArea = {
   x: 0.27,
@@ -164,5 +165,9 @@ export function createFloatUpLayout(
     version: 1,
     reservedArea: { ...reservedArea },
     items: resolveCollisions(items, metadata, reservedArea, stageAspectRatio),
+    motion: {
+      durationMs: DEFAULT_MOTION.durationMs,
+      easing: { ...DEFAULT_MOTION.easing },
+    },
   }
 }

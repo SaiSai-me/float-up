@@ -5,6 +5,7 @@ export type Locale = 'zh' | 'en'
 export type Notice = {
   key: 'intro' | 'arranged' | 'replaying' | 'autoLayout' | 'demoRestored' | 'removed' | 'reset' | 'copied' | 'downloaded'
   count?: number
+  durationMs?: number
 }
 
 export const messages = {
@@ -24,7 +25,7 @@ export const messages = {
     notice: {
       intro: 'Try the sample, or add your own transparent images.',
       arranged: (count: number) => `${count} image${count === 1 ? '' : 's'} arranged locally. Nothing was uploaded.`,
-      replaying: 'Replaying the complete 2.8 second rise.',
+      replaying: (durationMs: number) => `Replaying the complete ${(durationMs / 1000).toFixed(1)} second rise.`,
       autoLayout: 'A fresh deterministic layout has been applied.',
       demoRestored: 'The original Float Up demo ornaments are back.',
       removed: 'Ornament removed from this layout.',
@@ -63,6 +64,24 @@ export const messages = {
       restoreDemo: 'Restore demo ornaments',
       editItem: (id: string) => `Edit ${id}. Use arrow keys to move and Delete to remove.`,
       resizeItem: (id: string) => `Resize ${id}`,
+      motion: {
+        title: 'Speed curve',
+        description: 'Drag P1 and P2 to shape how quickly the ornaments rise. Vertical overshoot is supported.',
+        canvasLabel: 'Editable cubic Bézier speed curve with draggable control points',
+        duration: 'Replay duration',
+        seconds: 's',
+        presets: 'Curve presets',
+        presetNames: {
+          gentle: 'Gentle',
+          linear: 'Linear',
+          easeOut: 'Ease out',
+          smooth: 'S-curve',
+          overshoot: 'Overshoot',
+        },
+        controlPoint: (number: number) => `Control point ${number}`,
+        preview: 'Preview motion',
+        reset: 'Reset curve',
+      },
     },
     scrollCue: 'SCROLL TO FLOAT',
     notes: {
@@ -98,7 +117,7 @@ export const messages = {
     notice: {
       intro: '体验示例素材，或添加你自己的透明图片。',
       arranged: (count: number) => `已在本地排版 ${count} 张图片，没有上传任何文件。`,
-      replaying: '正在重播完整的 2.8 秒上浮动画。',
+      replaying: (durationMs: number) => `正在重播完整的 ${(durationMs / 1000).toFixed(1)} 秒上浮动画。`,
       autoLayout: '已应用一组新的确定性自动布局。',
       demoRestored: '已恢复 Float Up 原始示例素材。',
       removed: '已从当前布局中移除这个元素。',
@@ -137,6 +156,24 @@ export const messages = {
       restoreDemo: '恢复示例素材',
       editItem: (id: string) => `编辑 ${id}。使用方向键移动，按 Delete 删除。`,
       resizeItem: (id: string) => `缩放 ${id}`,
+      motion: {
+        title: '速度曲线',
+        description: '拖动 P1 和 P2，改变元素上浮速度的快慢变化；垂直方向支持回弹和超调。',
+        canvasLabel: '可拖动控制点的三次贝塞尔速度曲线编辑器',
+        duration: '重播时长',
+        seconds: '秒',
+        presets: '曲线预设',
+        presetNames: {
+          gentle: '轻柔',
+          linear: '匀速',
+          easeOut: '快速缓出',
+          smooth: '平滑 S 型',
+          overshoot: '轻微回弹',
+        },
+        controlPoint: (number: number) => `控制点 ${number}`,
+        preview: '预览动画',
+        reset: '重置曲线',
+      },
     },
     scrollCue: '向下滚动，让元素上浮',
     notes: {
@@ -170,5 +207,7 @@ export function getInitialLocale(): Locale {
 
 export function formatNotice(locale: Locale, notice: Notice) {
   const copy = messages[locale].notice
-  return notice.key === 'arranged' ? copy.arranged(notice.count ?? 0) : copy[notice.key]
+  if (notice.key === 'arranged') return copy.arranged(notice.count ?? 0)
+  if (notice.key === 'replaying') return copy.replaying(notice.durationMs ?? 2800)
+  return copy[notice.key]
 }

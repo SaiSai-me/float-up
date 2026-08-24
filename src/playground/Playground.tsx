@@ -8,13 +8,16 @@ import {
 } from 'react'
 import {
   createFloatUpLayout,
+  DEFAULT_MOTION,
   FloatUp,
   type FloatUpConfig,
   type FloatUpController,
   type FloatUpImageMetadata,
   type FloatUpItem,
+  type FloatUpMotionConfig,
 } from '../float-up'
 import { EditorStage } from './EditorStage'
+import { MotionCurveEditor } from './MotionCurveEditor'
 import {
   getSafeFileStem,
   ImageFileError,
@@ -54,8 +57,15 @@ function createDemoAssets(): PlaygroundAsset[] {
   }))
 }
 
-function makeLayout(assets: PlaygroundAsset[]) {
-  return createFloatUpLayout(assets.map((asset) => asset.metadata))
+function makeLayout(assets: PlaygroundAsset[], motion?: FloatUpMotionConfig) {
+  const layout = createFloatUpLayout(assets.map((asset) => asset.metadata))
+  if (motion) {
+    layout.motion = {
+      durationMs: motion.durationMs,
+      easing: { ...motion.easing },
+    }
+  }
+  return layout
 }
 
 type CenterCopy = (typeof messages)[Locale]['center']
@@ -131,7 +141,7 @@ export function Playground() {
 
   const replaceWithAssets = (nextAssets: PlaygroundAsset[]) => {
     revokeAssets(assetsRef.current)
-    const nextLayout = makeLayout(nextAssets)
+    const nextLayout = makeLayout(nextAssets, config.motion)
     setAssets(nextAssets)
     setConfig(nextLayout)
     setAutoConfig(nextLayout)
@@ -186,11 +196,11 @@ export function Playground() {
     setSelectedId(null)
     window.scrollTo({ top: 0, behavior: 'auto' })
     window.requestAnimationFrame(() => floatUpRef.current?.replay())
-    setNotice({ key: 'replaying' })
+    setNotice({ key: 'replaying', durationMs: (config.motion ?? DEFAULT_MOTION).durationMs })
   }
 
   const runAutoLayout = () => {
-    const next = makeLayout(assets)
+    const next = makeLayout(assets, config.motion)
     setConfig(next)
     setAutoConfig(next)
     setSelectedId(null)
@@ -208,6 +218,16 @@ export function Playground() {
     setConfig((current) => ({
       ...current,
       items: current.items.map((item) => item.id === selectedId ? updater(item) : item),
+    }))
+  }
+
+  const updateMotion = (motion: FloatUpMotionConfig) => {
+    setConfig((current) => ({
+      ...current,
+      motion: {
+        durationMs: motion.durationMs,
+        easing: { ...motion.easing },
+      },
     }))
   }
 
@@ -420,6 +440,12 @@ export function Playground() {
               ) : (
                 <p className="inspector-help">{copy.editor.help}</p>
               )}
+              <MotionCurveEditor
+                value={config.motion ?? DEFAULT_MOTION}
+                labels={copy.editor.motion}
+                onChange={updateMotion}
+                onPreview={replay}
+              />
               <button className="inspector-demo" type="button" onClick={restoreDemo}>{copy.editor.restoreDemo}</button>
             </aside>
           )}

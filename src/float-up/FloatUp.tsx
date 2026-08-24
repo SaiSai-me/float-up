@@ -6,16 +6,11 @@ import {
 } from 'react'
 import type { CSSProperties } from 'react'
 import type { FloatUpController, FloatUpProps } from './types'
+import { DEFAULT_MOTION, evaluateCubicBezier } from './easing'
 import './float-up.css'
-
-const REPLAY_DURATION = 2800
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value))
-}
-
-function easeOut(progress: number) {
-  return 1 - (1 - progress) ** 2
 }
 
 export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function FloatUp(
@@ -33,6 +28,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
     if (!stage) return
 
     const now = window.performance.now()
+    const motion = config.motion ?? DEFAULT_MOTION
     let sourceProgress = 1
 
     if (reduceMotionRef.current) {
@@ -40,7 +36,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       replayStartedAtRef.current = undefined
       replayHoldingRef.current = false
     } else if (replayStartedAtRef.current !== undefined) {
-      sourceProgress = clamp01((now - replayStartedAtRef.current) / REPLAY_DURATION)
+      sourceProgress = clamp01((now - replayStartedAtRef.current) / Math.max(1, motion.durationMs))
       if (sourceProgress >= 1) {
         replayStartedAtRef.current = undefined
         replayHoldingRef.current = true
@@ -53,7 +49,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       sourceProgress = clamp01((window.scrollY - start) / Math.max(1, distance))
     }
 
-    const progress = easeOut(sourceProgress)
+    const progress = evaluateCubicBezier(sourceProgress, motion.easing)
     const stageHeight = stage.clientHeight
     const elements = stage.querySelectorAll<HTMLElement>('[data-float-up-item]')
 

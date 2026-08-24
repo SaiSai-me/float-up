@@ -22,10 +22,24 @@ export type FloatUpReservedArea = {
   height: number
 }
 
+export type FloatUpBezier = {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+export type FloatUpMotionConfig = {
+  durationMs: number
+  easing: FloatUpBezier
+}
+
 export type FloatUpConfig = {
   version: 1
   reservedArea: FloatUpReservedArea
   items: FloatUpItem[]
+  /** Optional for backward compatibility with early v1 configuration. */
+  motion?: FloatUpMotionConfig
 }
 
 export type FloatUpController = {
