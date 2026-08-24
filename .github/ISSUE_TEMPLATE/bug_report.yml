@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a reproducible problem in the component or playground.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Open…\n2. Upload…\n3. Click…"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Desktop environment
+      description: Operating system, browser, and viewport size.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Do not attach private images unless you are comfortable publishing them.
