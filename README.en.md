@@ -1,0 +1,73 @@
+<p align="center">
+  <img src="docs/images/cover.png" alt="Float Up title artwork" width="720" />
+</p>
+
+<h1 align="center">Float Up</h1>
+
+<p align="center">Compose transparent image motion visually. Export a scene your website can use directly.</p>
+
+<p align="center">
+  <a href="https://saisai-me.github.io/float-up/">Live demo</a>
+  &nbsp;·&nbsp;
+  <a href="README.md">中文说明</a>
+  &nbsp;·&nbsp;
+  <a href="docs/react-api.md">React API</a>
+  &nbsp;·&nbsp;
+  <a href="LICENSE">MIT License</a>
+</p>
+
+## Screens
+
+| 01 · Introduction | 02 · Editor |
+| :---: | :---: |
+| [![Float Up introduction](docs/images/intro.png)](docs/images/intro.png) | [![Float Up editor](docs/images/editor.png)](docs/images/editor.png) |
+
+The introduction has a looping field of floating illustrations. In the editor, select images on the canvas, adjust motion in the inspector, and use the play button to preview the full scene without leaving the workspace.
+
+## Features
+
+| | |
+| --- | --- |
+| **Direct editing** | Add or drop transparent PNG/WebP images. Move them on the canvas; drag the handles to set direction, rotation, and size. |
+| **Per-element motion** | Set duration, a one-way cubic Bézier speed curve, and an end behavior: stop at the selected point or fly offstage. |
+| **In-place preview** | Replay one selected element or the entire composition. The full preview returns to the editing canvas when it finishes. |
+| **Portable export** | Download a transparent web component with embedded images, editable JSON, originals, and instructions for coding agents. |
+
+Your images stay in the browser. The editor targets desktop and accepts static PNG/WebP files. The runtime respects `prefers-reduced-motion`.
+
+## Quick start
+
+1. Open the [live editor](https://saisai-me.github.io/float-up/) and choose **Start making**.
+2. Use **+** to add images, select an element to tune its motion, and press play to preview.
+3. Choose **Export**, check the preview, and download `float-up-website.zip`.
+4. Put `float-up.js` in your website and use the embed snippet in the ZIP's `README.md`. No React or npm is needed at runtime.
+
+To keep editing, choose the ZIP with **+** or drop it onto the canvas. You can also import its JSON together with the matching images.
+
+### Export contents
+
+| File | Purpose |
+| --- | --- |
+| `float-up.js` | Standalone web component with embedded images; the only runtime file your site needs. |
+| `float-up-layout.json` | Positions, sizes, directions, speed curves, and end behaviors. |
+| `ornaments/` | Original PNG/WebP images for future edits. |
+| `README.md` | Exact embed snippet and playback instructions. |
+| `AGENTS.md` | Integration instructions for coding agents. |
+| `LICENSE.txt` | MIT license for the exported runtime. |
+
+## Development
+
+```bash
+npm ci
+npm run dev
+npm run typecheck
+npm run build
+```
+
+The reusable React component and configuration fields are documented in the [React API guide](docs/react-api.md). `src/float-up/` contains the motion component and `src/playground/` contains the editor. Pushing to `main` builds and deploys the site through GitHub Actions.
+
+## Credits
+
+The code and `public/demo/` samples are under the [MIT License](LICENSE). The looping introduction artwork comes from Microsoft Fluent Emoji, with its [MIT license and attribution](public/landing/SOURCE.md). The title artwork was provided by the project author; the screenshots show the Float Up site. Users retain the rights to their own uploaded images.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
