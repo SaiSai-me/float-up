@@ -55,19 +55,10 @@ To keep editing, choose the ZIP with **+** or drop it onto the canvas. You can a
 | `AGENTS.md` | Integration instructions for coding agents. |
 | `LICENSE.txt` | MIT license for the exported runtime. |
 
-## Development
+## Other ways to integrate
 
-```bash
-npm ci
-npm run dev
-npm run typecheck
-npm run build
-```
-
-The reusable React component and configuration fields are documented in the [React API guide](docs/react-api.md). `src/float-up/` contains the motion component and `src/playground/` contains the editor. Pushing to `main` builds and deploys the site through GitHub Actions.
+Using React? Follow the [React API guide](docs/react-api.md) to integrate the motion component directly. To improve Float Up, see the [contribution guide](CONTRIBUTING.md).
 
 ## Credits
 
-The code and `public/demo/` samples are under the [MIT License](LICENSE). The looping introduction artwork comes from Microsoft Fluent Emoji, with its [MIT license and attribution](public/landing/SOURCE.md). The title artwork was provided by the project author; the screenshots show the Float Up site. Users retain the rights to their own uploaded images.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
+The code and `public/demo/` samples are under the [MIT License](LICENSE). The looping introduction artwork comes from Microsoft Fluent Emoji, with its [MIT license and attribution](public/landing/SOURCE.md). Users retain the rights to their own uploaded images.

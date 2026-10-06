@@ -62,19 +62,10 @@ The introduction shows a looping field of floating illustrations. In the editor,
 | `AGENTS.md` | 给编程 Agent 的文件说明和集成步骤。 |
 | `LICENSE.txt` | 导出运行时代码的 MIT 许可证。 |
 
-## 开发 / Development
+## 其他接入方式
 
-```bash
-npm ci
-npm run dev
-npm run typecheck
-npm run build
-```
-
-React 源码组件和配置字段见 [React API 文档](docs/react-api.md)。项目结构：`src/float-up/` 是动效组件，`src/playground/` 是在线编辑器。推送到 `main` 后，GitHub Actions 会构建并发布 GitHub Pages。
+如果使用 React，可参考 [React API 文档](docs/react-api.md) 直接集成动效组件。想改进 Float Up，可阅读[贡献指南](CONTRIBUTING.md)。
 
 ## 素材与许可 / Credits
 
-代码和 `public/demo/` 示例素材使用 [MIT License](LICENSE)。首页循环插画来自 Microsoft Fluent Emoji，保留其 [MIT 授权与来源](public/landing/SOURCE.md)。封面标题图由项目作者提供，页面截图来自 Float Up 网站。用户上传图片的权利仍归用户所有。
-
-欢迎阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 参与项目。
+代码和 `public/demo/` 示例素材使用 [MIT License](LICENSE)。首页循环插画来自 Microsoft Fluent Emoji，保留其 [MIT 授权与来源](public/landing/SOURCE.md)。用户上传图片的权利仍归用户所有。
