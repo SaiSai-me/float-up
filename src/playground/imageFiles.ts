@@ -7,7 +7,7 @@ export type PlaygroundAsset = {
   fileName: string
 }
 
-export type ImageFileErrorCode = 'unsupported' | 'decode' | 'inspect' | 'opaque' | 'empty' | 'unknown'
+export type ImageFileErrorCode = 'unsupported' | 'decode' | 'inspect' | 'opaque' | 'empty' | 'missing' | 'unknown'
 
 export class ImageFileError extends Error {
   readonly code: ImageFileErrorCode
@@ -122,7 +122,7 @@ export async function inspectImageFile(
       height,
       visibleBounds,
     },
-    exportSrc: `/ornaments/${fileName}`,
+    exportSrc: `ornaments/${fileName}`,
     objectUrl,
     fileName,
   }

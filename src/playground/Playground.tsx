@@ -1,22 +1,28 @@
 import {
+  useCallback,
   useMemo,
   useRef,
   useState,
   useEffect,
+  useLayoutEffect,
   type ChangeEvent,
   type DragEvent,
 } from 'react'
+import { unzipSync } from 'fflate'
 import {
   createFloatUpLayout,
   DEFAULT_MOTION,
   FloatUp,
   type FloatUpConfig,
   type FloatUpController,
-  type FloatUpImageMetadata,
   type FloatUpItem,
   type FloatUpMotionConfig,
+  type FloatUpReservedArea,
 } from '../float-up'
 import { EditorStage } from './EditorStage'
+import { ExportDialog } from './ExportDialog'
+import { buildWebsitePackage } from './exportPackage'
+import { LandingBackdrop } from './LandingBackdrop'
 import { MotionCurveEditor } from './MotionCurveEditor'
 import {
   getSafeFileStem,
@@ -26,9 +32,11 @@ import {
   type ImageFileErrorCode,
   type PlaygroundAsset,
 } from './imageFiles'
+import { getLayoutFileName, parseFloatUpConfig } from './layoutImport'
 import { formatNotice, getInitialLocale, messages, type Locale, type Notice } from './i18n'
 
 const baseUrl = import.meta.env.BASE_URL
+const EMPTY_RESERVED_AREA: FloatUpReservedArea = { x: 0, y: 0, width: 0, height: 0 }
 
 function createDemoAssets(): PlaygroundAsset[] {
   const definitions = [
@@ -52,13 +60,13 @@ function createDemoAssets(): PlaygroundAsset[] {
         height: bounds[3],
       },
     },
-    exportSrc: `/ornaments/${fileName}`,
+    exportSrc: `ornaments/${fileName}`,
     fileName,
   }))
 }
 
-function makeLayout(assets: PlaygroundAsset[], motion?: FloatUpMotionConfig) {
-  const layout = createFloatUpLayout(assets.map((asset) => asset.metadata))
+function makeLayout(assets: PlaygroundAsset[], motion?: FloatUpMotionConfig, reservedArea?: FloatUpReservedArea) {
+  const layout = createFloatUpLayout(assets.map((asset) => asset.metadata), { reservedArea: reservedArea ?? EMPTY_RESERVED_AREA })
   if (motion) {
     layout.motion = {
       durationMs: motion.durationMs,
@@ -68,103 +76,267 @@ function makeLayout(assets: PlaygroundAsset[], motion?: FloatUpMotionConfig) {
   return layout
 }
 
+function makeDemoLayout(assets: PlaygroundAsset[]) {
+  const layout = makeLayout(assets)
+  const examples = [
+    { x: 0.38, y: 0.46, width: 0.11, rotation: -9, directionDeg: 255, durationMs: 3200 },
+    { x: 0.56, y: 0.55, width: 0.12, rotation: 8, directionDeg: 280, durationMs: 3900 },
+  ]
+  return {
+    ...layout,
+    items: layout.items.map((item, index) => ({
+      ...item,
+      ...(examples[index] ? {
+        target: { x: examples[index].x, y: examples[index].y },
+        width: examples[index].width,
+        rotation: examples[index].rotation,
+      } : {}),
+      motion: {
+        durationMs: examples[index]?.durationMs ?? DEFAULT_MOTION.durationMs,
+        easing: { ...DEFAULT_MOTION.easing },
+        directionDeg: examples[index]?.directionDeg ?? 270,
+      },
+    })),
+  }
+}
+
 type CenterCopy = (typeof messages)[Locale]['center']
 
-function CenterCard({ editing, copy }: { editing: boolean; copy: CenterCopy }) {
+type Page = 'intro' | 'editor'
+type DropPoint = { x: number; y: number; aspectRatio: number }
+type ItemPreview = { item: FloatUpItem; run: number }
+
+function getPageFromUrl(): Page {
+  return window.location.hash === '#/editor' ? 'editor' : 'intro'
+}
+
+async function unpackWebsitePackage(file: File): Promise<File[]> {
+  const archive = unzipSync(new Uint8Array(await file.arrayBuffer()), {
+    filter: (entry) => entry.name === 'float-up-layout.json'
+      ? entry.originalSize <= 2_000_000
+      : /^ornaments\/[a-z0-9][a-z0-9-]*\.(?:png|webp)$/.test(entry.name)
+        && entry.originalSize <= 25_000_000,
+  })
+  const layout = archive['float-up-layout.json']
+  if (!layout) throw new Error('Missing layout JSON')
+  return [
+    new File([new Uint8Array(layout)], 'float-up-layout.json', { type: 'application/json' }),
+    ...Object.entries(archive)
+      .filter(([name]) => name.startsWith('ornaments/'))
+      .map(([name, bytes]) => new File(
+        [new Uint8Array(bytes)],
+        name.replace('ornaments/', ''),
+        { type: name.endsWith('.webp') ? 'image/webp' : 'image/png' },
+      )),
+  ]
+}
+
+function CenterCard({ copy, onStart }: { copy: CenterCopy; onStart: () => void }) {
   return (
-    <article className={`center-card${editing ? ' is-editing' : ''}`}>
-      <span className="center-eyebrow">{copy.eyebrow}</span>
-      <h1>Float Up</h1>
+    <article className="center-card">
+      <div
+        className="center-card-art"
+        aria-hidden="true"
+        style={{
+          WebkitMaskImage: `url("${baseUrl}landing/card/mask.svg")`,
+          maskImage: `url("${baseUrl}landing/card/mask.svg")`,
+        }}
+      >
+        <img src={`${baseUrl}landing/card/flowers.png`} alt="" draggable={false} />
+      </div>
+      <h1>float up</h1>
       <p>{copy.description}</p>
-      <ol aria-label={copy.workflowLabel}>
-        {copy.steps.map((step, index) => <li key={step}><span>{index + 1}</span> {step}</li>)}
-      </ol>
-      {editing && <strong>{copy.reserved}</strong>}
+      <button className="start-button" type="button" onClick={onStart}>{copy.startMaking}</button>
     </article>
   )
 }
 
-async function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  textarea.remove()
+function LanguageTabs({ locale, label, onChange }: { locale: Locale; label: string; onChange: (locale: Locale) => void }) {
+  return (
+    <div className="language-tabs" role="tablist" aria-label={label}>
+      <button type="button" role="tab" aria-selected={locale === 'zh'} className={locale === 'zh' ? 'is-active' : ''} onClick={() => onChange('zh')}>中文</button>
+      <button type="button" role="tab" aria-selected={locale === 'en'} className={locale === 'en' ? 'is-active' : ''} onClick={() => onChange('en')}>EN</button>
+    </div>
+  )
 }
 
 export function Playground() {
-  const initialAssets = useMemo(createDemoAssets, [])
-  const initialLayout = useMemo(() => makeLayout(initialAssets), [initialAssets])
+  const initialAssets = useMemo(() => createDemoAssets().filter((asset) => asset.metadata.id === 'golden-star' || asset.metadata.id === 'lavender-flower'), [])
+  const initialLayout = useMemo(() => makeDemoLayout(initialAssets), [initialAssets])
   const [assets, setAssets] = useState<PlaygroundAsset[]>(initialAssets)
   const [config, setConfig] = useState<FloatUpConfig>(initialLayout)
-  const [autoConfig, setAutoConfig] = useState<FloatUpConfig>(initialLayout)
   const [locale, setLocale] = useState<Locale>(getInitialLocale)
-  const [editing, setEditing] = useState(false)
+  const [page, setPage] = useState<Page>(getPageFromUrl)
+  const [fullPreviewRun, setFullPreviewRun] = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [itemPreview, setItemPreview] = useState<ItemPreview | null>(null)
   const [errors, setErrors] = useState<Array<{ fileName: string; code: ImageFileErrorCode }>>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
+  const [isExportOpen, setExportOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>({ key: 'intro' })
   const floatUpRef = useRef<FloatUpController>(null)
+  const itemPreviewRef = useRef<FloatUpController>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const assetsRef = useRef(assets)
+  const configRef = useRef(config)
+  const isUsingDemoRef = useRef(true)
+  const mountedRef = useRef(true)
+  const importGenerationRef = useRef(0)
+  const pendingJobsRef = useRef(0)
+  const jobQueueRef = useRef(Promise.resolve())
   assetsRef.current = assets
+  configRef.current = config
 
   const metadata = useMemo(
     () => new Map(assets.map((asset) => [asset.metadata.id, asset.metadata])),
     [assets],
   )
   const selectedItem = config.items.find((item) => item.id === selectedId) ?? null
+  const activeItemPreview = fullPreviewRun === null && selectedItem?.id === itemPreview?.item.id ? itemPreview : null
+  const itemPreviewConfig = useMemo<FloatUpConfig | null>(() => activeItemPreview ? {
+    version: 1,
+    reservedArea: EMPTY_RESERVED_AREA,
+    motion: config.motion,
+    items: [activeItemPreview.item],
+  } : null, [activeItemPreview, config.motion])
   const copy = messages[locale]
+  const closeExportDialog = useCallback(() => setExportOpen(false), [])
 
-  useEffect(() => () => revokeAssets(assetsRef.current), [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      revokeAssets(assetsRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
     document.title = locale === 'zh'
-      ? 'Float Up — React 漂浮元素动效'
-      : 'Float Up — floating ornaments for React'
+      ? page === 'intro' ? 'Float Up — 可视化动效编辑器' : 'Float Up — 动效编辑器'
+      : page === 'intro' ? 'Float Up — visual motion editor' : 'Float Up — motion editor'
     try {
       window.localStorage.setItem('float-up-locale', locale)
     } catch {
       // The switch still works when browser storage is unavailable.
     }
-  }, [locale])
+  }, [locale, page])
 
-  const replaceWithAssets = (nextAssets: PlaygroundAsset[]) => {
-    revokeAssets(assetsRef.current)
-    const nextLayout = makeLayout(nextAssets, config.motion)
-    setAssets(nextAssets)
-    setConfig(nextLayout)
-    setAutoConfig(nextLayout)
-    setSelectedId(null)
-    setEditing(false)
+  useEffect(() => {
+    if (notice.key === 'intro' || notice.key === 'exporting') return
+    const timeout = window.setTimeout(() => setNotice({ key: 'intro' }), 4000)
+    return () => window.clearTimeout(timeout)
+  }, [notice])
+
+  useLayoutEffect(() => {
+    if (!activeItemPreview || page !== 'editor') return
+    itemPreviewRef.current?.replay()
+    const durationMs = activeItemPreview.item.motion?.durationMs ?? config.motion?.durationMs ?? DEFAULT_MOTION.durationMs
+    const timeout = window.setTimeout(() => {
+      setItemPreview((current) => current?.run === activeItemPreview.run ? null : current)
+    }, durationMs + 300)
+    return () => window.clearTimeout(timeout)
+  }, [activeItemPreview, config.motion?.durationMs, page])
+
+  useLayoutEffect(() => {
+    if (fullPreviewRun === null || page !== 'editor') return
+    floatUpRef.current?.replay()
+    const durationMs = Math.max(
+      config.motion?.durationMs ?? DEFAULT_MOTION.durationMs,
+      ...config.items.map((item) => item.motion?.durationMs ?? 0),
+    )
+    const timeout = window.setTimeout(() => {
+      setFullPreviewRun((current) => current === fullPreviewRun ? null : current)
+      setNotice((current) => current.key === 'replaying' ? { key: 'intro' } : current)
+    }, durationMs + 500)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullPreviewRun(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.clearTimeout(timeout)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [fullPreviewRun, config, page])
+
+  useEffect(() => {
+    const syncPage = () => {
+      setPage(getPageFromUrl())
+      setItemPreview(null)
+      setFullPreviewRun(null)
+      window.scrollTo({ top: 0, behavior: 'instant' })
+    }
+    window.addEventListener('popstate', syncPage)
+    window.addEventListener('hashchange', syncPage)
+    return () => {
+      window.removeEventListener('popstate', syncPage)
+      window.removeEventListener('hashchange', syncPage)
+    }
+  }, [])
+
+  const navigateTo = (nextPage: Page) => {
+    const url = nextPage === 'editor'
+      ? `${window.location.pathname}${window.location.search}#/editor`
+      : `${window.location.pathname}${window.location.search}`
+    window.history.pushState(null, '', url)
+    setPage(nextPage)
+    setItemPreview(null)
+    setFullPreviewRun(null)
+    window.scrollTo({ top: 0, behavior: 'instant' })
   }
 
-  const processFiles = async (files: File[]) => {
-    if (files.length === 0) return
+  const applyProject = (
+    nextAssets: PlaygroundAsset[],
+    nextLayout: FloatUpConfig,
+    usingDemo: boolean,
+    keepEditing = false,
+  ) => {
+    const retainedUrls = new Set(nextAssets.map((asset) => asset.objectUrl))
+    revokeAssets(assetsRef.current.filter((asset) => !retainedUrls.has(asset.objectUrl)))
+    assetsRef.current = nextAssets
+    configRef.current = nextLayout
+    isUsingDemoRef.current = usingDemo
+    setAssets(nextAssets)
+    setConfig(nextLayout)
+    setItemPreview(null)
+    if (!keepEditing) {
+      setSelectedId(null)
+    }
+  }
+
+  const enqueueJob = (job: (generation: number) => Promise<void>) => {
+    const generation = importGenerationRef.current
+    pendingJobsRef.current += 1
     setIsProcessing(true)
+    jobQueueRef.current = jobQueueRef.current
+      .then(() => generation === importGenerationRef.current && mountedRef.current ? job(generation) : undefined)
+      .catch(() => {
+        if (mountedRef.current) setNotice({ key: 'importFailed' })
+      })
+      .then(() => {
+        pendingJobsRef.current -= 1
+        if (mountedRef.current) setIsProcessing(pendingJobsRef.current > 0)
+      })
+  }
+
+  const processFiles = async (files: File[], generation: number, dropPoint?: DropPoint) => {
     setErrors([])
     const nextAssets: PlaygroundAsset[] = []
     const nextErrors: Array<{ fileName: string; code: ImageFileErrorCode }> = []
-    const occurrences = new Map<string, number>()
+    const replaceDemo = isUsingDemoRef.current
+    const usedIds = new Set(replaceDemo ? [] : assetsRef.current.map((asset) => asset.metadata.id))
 
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index]
-      const occurrenceKey = getSafeFileStem(file.name, `ornament-${index + 1}`)
-      const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1
-      occurrences.set(occurrenceKey, occurrence)
+      const stem = getSafeFileStem(file.name, `ornament-${index + 1}`)
+      let occurrence = 1
+      while (usedIds.has(occurrence === 1 ? stem : `${stem}-${occurrence}`)) occurrence += 1
 
       try {
-        nextAssets.push(await inspectImageFile(file, index, occurrence))
+        const asset = await inspectImageFile(file, index, occurrence)
+        nextAssets.push(asset)
+        usedIds.add(asset.metadata.id)
       } catch (error) {
         nextErrors.push(error instanceof ImageFileError
           ? { fileName: error.fileName, code: error.code }
@@ -172,45 +344,196 @@ export function Playground() {
       }
     }
 
+    if (generation !== importGenerationRef.current || !mountedRef.current) {
+      revokeAssets(nextAssets)
+      return
+    }
+
     if (nextAssets.length > 0) {
-      replaceWithAssets(nextAssets)
+      if (replaceDemo) {
+        const layout = makeLayout(nextAssets, configRef.current.motion)
+        if (dropPoint) {
+          layout.items = layout.items.map((item, index) => {
+            const image = nextAssets[index].metadata
+            const height = item.width * image.height / image.width * dropPoint.aspectRatio
+            return {
+              ...item,
+              target: {
+                x: Math.min(1 - item.width / 2, Math.max(item.width / 2, dropPoint.x + index * 0.035)),
+                y: Math.min(1 - height / 2, Math.max(height / 2, dropPoint.y + index * 0.035)),
+              },
+            }
+          })
+        }
+        applyProject(nextAssets, layout, false)
+      } else {
+        const allAssets = [...assetsRef.current, ...nextAssets]
+        const automatic = makeLayout(allAssets, configRef.current.motion, configRef.current.reservedArea)
+        const additions = new Set(nextAssets.map((asset) => asset.metadata.id))
+        const addedItems = automatic.items.filter((item) => additions.has(item.id)).map((item) => {
+            if (!dropPoint) return item
+            const addedIndex = nextAssets.findIndex((asset) => asset.metadata.id === item.id)
+            const image = nextAssets[addedIndex].metadata
+            const height = item.width * image.height / image.width * dropPoint.aspectRatio
+            return {
+              ...item,
+              target: {
+                x: Math.min(1 - item.width / 2, Math.max(item.width / 2, dropPoint.x + addedIndex * 0.035)),
+                y: Math.min(1 - height / 2, Math.max(height / 2, dropPoint.y + addedIndex * 0.035)),
+              },
+            }
+          })
+        const nextLayout = {
+          ...automatic,
+          items: [...configRef.current.items, ...addedItems],
+        }
+        applyProject(allAssets, nextLayout, false, true)
+      }
+      setSelectedId(nextAssets[0].metadata.id)
       setNotice({ key: 'arranged', count: nextAssets.length })
     }
     setErrors(nextErrors)
-    setIsProcessing(false)
   }
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    void processFiles(Array.from(event.target.files ?? []))
+    const files = Array.from(event.target.files ?? [])
+    if (files.length > 0) {
+      setFullPreviewRun(null)
+      enqueueJob((generation) => files.some((file) => /\.(?:json|zip)$/i.test(file.name))
+        ? processLayoutImport(files, generation)
+        : processFiles(files, generation))
+    }
     event.target.value = ''
   }
 
   const onDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault()
     setIsDraggingFiles(false)
-    void processFiles(Array.from(event.dataTransfer.files))
+    const files = Array.from(event.dataTransfer.files)
+    const stage = event.currentTarget.querySelector<HTMLElement>('.editor-stage, .float-up-stage')
+    const bounds = stage?.getBoundingClientRect()
+    const dropPoint = bounds && event.clientX >= bounds.left && event.clientX <= bounds.right
+      && event.clientY >= bounds.top && event.clientY <= bounds.bottom
+      ? {
+          x: (event.clientX - bounds.left) / bounds.width,
+          y: (event.clientY - bounds.top) / bounds.height,
+          aspectRatio: bounds.width / bounds.height,
+        }
+      : undefined
+    if (!dropPoint && !files.some((file) => /\.(?:json|zip)$/i.test(file.name))) return
+    setFullPreviewRun(null)
+    if (files.length > 0) enqueueJob((generation) => files.some((file) => /\.(?:json|zip)$/i.test(file.name))
+      ? processLayoutImport(files, generation)
+      : processFiles(files, generation, dropPoint))
   }
 
-  const replay = () => {
-    setEditing(false)
-    setSelectedId(null)
-    window.scrollTo({ top: 0, behavior: 'auto' })
-    window.requestAnimationFrame(() => floatUpRef.current?.replay())
-    setNotice({ key: 'replaying', durationMs: (config.motion ?? DEFAULT_MOTION).durationMs })
+  const processLayoutImport = async (files: File[], generation: number) => {
+    setErrors([])
+    let inputFiles = files
+    if (files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
+      try {
+        inputFiles = await unpackWebsitePackage(files[0])
+      } catch {
+        setNotice({ key: 'importFailed' })
+        return
+      }
+    }
+    if (generation !== importGenerationRef.current || !mountedRef.current) return
+    const jsonFiles = inputFiles.filter((file) => file.name.toLowerCase().endsWith('.json'))
+    if (jsonFiles.length !== 1) {
+      setNotice({ key: 'importFailed' })
+      return
+    }
+
+    let imported: FloatUpConfig | null = null
+    try {
+      imported = parseFloatUpConfig(JSON.parse(await jsonFiles[0].text()))
+    } catch {
+      // Report malformed JSON with the same actionable import notice.
+    }
+    if (generation !== importGenerationRef.current || !mountedRef.current) return
+    if (!imported) {
+      setNotice({ key: 'importFailed' })
+      return
+    }
+
+    const imageFiles = inputFiles.filter((file) => file !== jsonFiles[0])
+    const inspected: PlaygroundAsset[] = []
+    const nextErrors: Array<{ fileName: string; code: ImageFileErrorCode }> = []
+    const usedIds = new Set<string>()
+    for (let index = 0; index < imageFiles.length; index += 1) {
+      const file = imageFiles[index]
+      const stem = getSafeFileStem(file.name, `ornament-${index + 1}`)
+      let occurrence = 1
+      while (usedIds.has(occurrence === 1 ? stem : `${stem}-${occurrence}`)) occurrence += 1
+      try {
+        const asset = await inspectImageFile(file, index, occurrence)
+        inspected.push(asset)
+        usedIds.add(asset.metadata.id)
+      } catch (error) {
+        nextErrors.push(error instanceof ImageFileError
+          ? { fileName: error.fileName, code: error.code }
+          : { fileName: file.name, code: 'unknown' })
+      }
+    }
+
+    if (generation !== importGenerationRef.current || !mountedRef.current) {
+      revokeAssets(inspected)
+      return
+    }
+
+    const candidates = [...inspected, ...assetsRef.current, ...createDemoAssets()]
+    const nextAssets: PlaygroundAsset[] = []
+    for (const item of imported.items) {
+      const fileName = getLayoutFileName(item.src)!
+      const match = candidates.find((asset) => asset.fileName === fileName)
+      if (!match) {
+        nextErrors.push({ fileName, code: 'missing' })
+        continue
+      }
+      nextAssets.push({
+        ...match,
+        fileName,
+        exportSrc: `ornaments/${fileName}`,
+        metadata: { ...match.metadata, id: item.id },
+      })
+    }
+
+    setErrors(nextErrors)
+    if (nextAssets.length !== imported.items.length) {
+      revokeAssets(inspected)
+      setNotice({ key: 'importMissingImages' })
+      return
+    }
+
+    const usedUrls = new Set(nextAssets.map((asset) => asset.objectUrl))
+    revokeAssets(inspected.filter((asset) => !usedUrls.has(asset.objectUrl)))
+
+    const nextLayout: FloatUpConfig = {
+      ...imported,
+      items: imported.items.map((item, index) => ({ ...item, src: nextAssets[index].metadata.src })),
+    }
+    applyProject(nextAssets, nextLayout, false)
+    setNotice({ key: 'imported', count: nextAssets.length })
   }
 
-  const runAutoLayout = () => {
-    const next = makeLayout(assets, config.motion)
-    setConfig(next)
-    setAutoConfig(next)
-    setSelectedId(null)
-    setNotice({ key: 'autoLayout' })
+  const playFullPreview = () => {
+    setItemPreview(null)
+    setFullPreviewRun((current) => (current ?? 0) + 1)
+    setNotice({
+      key: 'replaying',
+      durationMs: Math.max((config.motion ?? DEFAULT_MOTION).durationMs, ...config.items.map((item) => item.motion?.durationMs ?? 0)),
+    })
   }
 
-  const restoreDemo = () => {
-    const demoAssets = createDemoAssets()
-    replaceWithAssets(demoAssets)
-    setNotice({ key: 'demoRestored' })
+  const previewSelectedItem = () => {
+    if (!selectedItem) return
+    setItemPreview((current) => ({ item: selectedItem, run: (current?.run ?? 0) + 1 }))
+  }
+
+  const selectItem = (id: string | null) => {
+    setItemPreview((current) => current?.item.id === id ? current : null)
+    setSelectedId(id)
   }
 
   const updateSelected = (updater: (item: FloatUpItem) => FloatUpItem) => {
@@ -221,51 +544,38 @@ export function Playground() {
     }))
   }
 
-  const updateMotion = (motion: FloatUpMotionConfig) => {
-    setConfig((current) => ({
-      ...current,
-      motion: {
-        durationMs: motion.durationMs,
-        easing: { ...motion.easing },
-      },
-    }))
+  const setExitMode = (exitMode: NonNullable<FloatUpItem['exitMode']>) => {
+    if (!selectedItem || (selectedItem.exitMode ?? 'stop') === exitMode) return
+    const nextItem = { ...selectedItem, exitMode }
+    updateSelected(() => nextItem)
+    setItemPreview((current) => ({ item: nextItem, run: (current?.run ?? 0) + 1 }))
   }
 
-  const resizeSelected = (nextWidth: number) => {
-    if (!selectedId) return
-    const image = metadata.get(selectedId)
-    updateSelected((item) => {
-      const width = Math.min(0.25, Math.max(0.04, nextWidth))
-      const height = image
-        ? width * (image.height / image.width) * (window.innerWidth / window.innerHeight)
-        : width
-      return {
-        ...item,
-        width,
-        target: {
-          x: Math.min(1 - width / 2, Math.max(width / 2, item.target.x)),
-          y: Math.min(1 - height / 2, Math.max(height / 2, item.target.y)),
-        },
-      }
-    })
-  }
+  const updateMotion = (motion: FloatUpMotionConfig) => updateSelected((item) => ({
+    ...item,
+    motion: { ...motion, easing: { ...motion.easing }, directionDeg: item.motion?.directionDeg ?? 270 },
+  }))
 
   const deleteItem = (id: string) => {
+    setItemPreview((current) => current?.item.id === id ? null : current)
     const removedAsset = assets.find((asset) => asset.metadata.id === id)
     if (removedAsset?.objectUrl) URL.revokeObjectURL(removedAsset.objectUrl)
-    setAssets((current) => current.filter((asset) => asset.metadata.id !== id))
+    assetsRef.current = assetsRef.current.filter((asset) => asset.metadata.id !== id)
+    setAssets(assetsRef.current)
     setConfig((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
-    setAutoConfig((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
     setSelectedId((current) => current === id ? null : current)
     setNotice({ key: 'removed' })
   }
 
-  const resetSelected = () => {
-    if (!selectedId) return
-    const automatic = autoConfig.items.find((item) => item.id === selectedId)
-    if (!automatic) return
-    updateSelected(() => ({ ...automatic, target: { ...automatic.target } }))
-    setNotice({ key: 'reset' })
+  const reorderItem = (id: string, direction: -1 | 1) => {
+    setConfig((current) => {
+      const index = current.items.findIndex((item) => item.id === id)
+      const nextIndex = index + direction
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.items.length) return current
+      const items = [...current.items]
+      ;[items[index], items[nextIndex]] = [items[nextIndex], items[index]]
+      return { ...current, items }
+    })
   }
 
   const getExportConfig = (): FloatUpConfig => ({
@@ -273,28 +583,60 @@ export function Playground() {
     reservedArea: { ...config.reservedArea },
     items: config.items.map((item) => ({
       ...item,
+      motion: item.motion ?? { ...(config.motion ?? DEFAULT_MOTION), directionDeg: 270 },
       src: assets.find((asset) => asset.metadata.id === item.id)?.exportSrc ?? item.src,
       target: { ...item.target },
     })),
   })
 
-  const copyConfig = async () => {
+  const downloadPackage = () => {
     const exported = getExportConfig()
-    const centerHeading = locale === 'zh' ? '你的中央内容' : 'Your central content'
-    const code = `import { FloatUp, type FloatUpConfig } from './float-up'\nimport './float-up/float-up.css'\n\nconst config: FloatUpConfig = ${JSON.stringify(exported, null, 2)}\n\nexport function Hero() {\n  return (\n    <FloatUp config={config}>\n      <h1>${centerHeading}</h1>\n    </FloatUp>\n  )\n}\n`
-    await copyText(code)
-    setNotice({ key: 'copied' })
+    const currentAssets = [...assets]
+    setNotice({ key: 'exporting' })
+    enqueueJob(async (generation) => {
+      try {
+        const blob = await buildWebsitePackage(exported, currentAssets)
+        if (generation !== importGenerationRef.current || !mountedRef.current) return
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = 'float-up-website.zip'
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        setExportOpen(false)
+        setNotice({ key: 'exported' })
+      } catch {
+        if (mountedRef.current) setNotice({ key: 'exportFailed' })
+      }
+    })
   }
 
-  const downloadConfig = () => {
-    const blob = new Blob([JSON.stringify(getExportConfig(), null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'float-up-layout.json'
-    anchor.click()
-    URL.revokeObjectURL(url)
-    setNotice({ key: 'downloaded' })
+  if (page === 'intro') {
+    return (
+      <main className="landing-page">
+        <div className="landing-top-actions">
+          <a
+            className="landing-github-link"
+            href="https://github.com/SaiSai-me/float-up"
+            target="_blank"
+            rel="noreferrer"
+            aria-label={copy.githubLabel}
+          >
+            GitHub <span aria-hidden="true">↗</span>
+          </a>
+          <LanguageTabs locale={locale} label={copy.languageLabel} onChange={setLocale} />
+        </div>
+
+        <section className="landing-hero" aria-label={copy.landingLabel}>
+          <LandingBackdrop />
+          <div className="landing-content">
+            <CenterCard copy={copy.center} onStart={() => navigateTo('editor')} />
+          </div>
+        </section>
+      </main>
+    )
   }
 
   return (
@@ -311,61 +653,28 @@ export function Playground() {
       onDrop={onDrop}
     >
       <header className="playground-toolbar">
-        <a className="toolbar-brand" href="https://github.com/SaiSai-me/float-up" aria-label={copy.githubLabel}>
-          <span>↑</span>
-          Float Up
-        </a>
-        <div className="language-tabs" role="tablist" aria-label={copy.languageLabel}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={locale === 'zh'}
-            className={locale === 'zh' ? 'is-active' : ''}
-            onClick={() => setLocale('zh')}
-          >
-            中文
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={locale === 'en'}
-            className={locale === 'en' ? 'is-active' : ''}
-            onClick={() => setLocale('en')}
-          >
-            EN
-          </button>
-        </div>
-        <p className="toolbar-status" role="status">{formatNotice(locale, notice)}</p>
+        <button className="toolbar-back" type="button" onClick={() => navigateTo('intro')} aria-label={copy.toolbar.backIntro} title={copy.toolbar.backIntro}>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+        <h1 className="toolbar-title"><img src={`${baseUrl}brand/float-up-icon.png`} alt="" />float up</h1>
         <div className="toolbar-actions">
           <input
             ref={fileInputRef}
             className="visually-hidden"
             type="file"
-            accept="image/png,image/webp,.png,.webp"
+            accept="image/png,image/webp,.png,.webp,.json,.zip,application/json,application/zip"
             multiple
             onChange={onFileChange}
           />
-          <button className="button button-primary" type="button" disabled={isProcessing} onClick={() => fileInputRef.current?.click()}>
-            {isProcessing ? copy.toolbar.checking : copy.toolbar.addImages}
+          <button className="button toolbar-add" type="button" disabled={isProcessing} onClick={() => fileInputRef.current?.click()} aria-label={copy.toolbar.addImages} title={copy.toolbar.addImages}>＋</button>
+          <button className="button toolbar-play" type="button" onClick={playFullPreview} disabled={config.items.length === 0} aria-label={copy.toolbar.playPreview} title={copy.toolbar.playPreview}>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l10-6.5L8 5.5Z" fill="currentColor" /></svg>
           </button>
-          <button className="button" type="button" onClick={runAutoLayout} disabled={assets.length === 0}>{copy.toolbar.autoArrange}</button>
-          <button
-            className={`button${editing ? ' is-active' : ''}`}
-            type="button"
-            aria-pressed={editing}
-            onClick={() => {
-              setEditing((current) => !current)
-              setSelectedId(null)
-            }}
-            disabled={assets.length === 0}
-          >
-            {editing ? copy.toolbar.doneEditing : copy.toolbar.editLayout}
-          </button>
-          <button className="button" type="button" onClick={replay} disabled={assets.length === 0}>{copy.toolbar.replay}</button>
-          <button className="button" type="button" onClick={() => void copyConfig()} disabled={assets.length === 0}>{copy.toolbar.copyReact}</button>
-          <button className="button" type="button" onClick={downloadConfig} disabled={assets.length === 0}>{copy.toolbar.downloadJson}</button>
+          <button className="button toolbar-export" type="button" onClick={() => setExportOpen(true)} disabled={assets.length === 0 || isProcessing}>{copy.toolbar.exportPackage}</button>
         </div>
       </header>
+
+      {notice.key !== 'intro' && <p className="toolbar-notice" role="status">{formatNotice(locale, notice)}</p>}
 
       {errors.length > 0 && (
         <aside className="error-panel" aria-live="polite">
@@ -379,102 +688,67 @@ export function Playground() {
 
       <section className="playground-track" aria-label={copy.playgroundLabel}>
         <div className="playground-sticky-stage">
-          {editing ? (
-            <EditorStage
-              config={config}
-              metadata={metadata}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onChange={setConfig}
-              onDelete={deleteItem}
-              labels={copy.editor}
-            >
-              <CenterCard editing copy={copy.center} />
-            </EditorStage>
-          ) : (
-            <FloatUp ref={floatUpRef} config={config}>
-              <CenterCard editing={false} copy={copy.center} />
-            </FloatUp>
+          <EditorStage
+            config={config}
+            metadata={metadata}
+            selectedId={selectedId}
+            previewingId={activeItemPreview?.item.id ?? null}
+            onSelect={selectItem}
+            onChange={setConfig}
+            onDelete={deleteItem}
+            onReorder={reorderItem}
+            labels={copy.editor}
+          />
+
+          {itemPreviewConfig && (
+            <div className="editor-item-preview" aria-hidden="true">
+              <FloatUp ref={itemPreviewRef} config={itemPreviewConfig} scroll={false} />
+            </div>
           )}
 
-          {editing && (
+          {selectedItem && (
             <aside className="editor-inspector" aria-label={copy.editor.ariaLabel}>
               <div className="inspector-heading">
-                <div>
-                  <span>{copy.editor.heading}</span>
-                  <strong>{selectedItem?.id ?? copy.editor.select}</strong>
-                </div>
-                <button type="button" onClick={() => setEditing(false)} aria-label={copy.editor.close}>×</button>
-              </div>
-              {selectedItem ? (
-                <>
-                  <label>
-                    <span>{copy.editor.size} <output>{Math.round(selectedItem.width * 100)}%</output></span>
-                    <input
-                      type="range"
-                      min="4"
-                      max="25"
-                      step="0.5"
-                      value={selectedItem.width * 100}
-                      onChange={(event) => resizeSelected(Number(event.target.value) / 100)}
-                    />
-                  </label>
-                  <label>
-                    <span>{copy.editor.rotation} <output>{Math.round(selectedItem.rotation)}°</output></span>
-                    <input
-                      type="range"
-                      min="-45"
-                      max="45"
-                      step="1"
-                      value={selectedItem.rotation}
-                      onChange={(event) => updateSelected((item) => ({ ...item, rotation: Number(event.target.value) }))}
-                    />
-                  </label>
-                  <div className="inspector-position">
-                    <span>X {Math.round(selectedItem.target.x * 100)}%</span>
-                    <span>Y {Math.round(selectedItem.target.y * 100)}%</span>
+                <div className="inspector-selected">
+                  <img src={selectedItem.src} alt="" />
+                  <div>
+                    <span>{copy.editor.heading}</span>
+                    <strong>{selectedItem.id}</strong>
                   </div>
-                  <button className="inspector-button" type="button" onClick={resetSelected}>{copy.editor.reset}</button>
-                  <button className="inspector-button is-danger" type="button" onClick={() => deleteItem(selectedItem.id)}>{copy.editor.delete}</button>
-                </>
-              ) : (
-                <p className="inspector-help">{copy.editor.help}</p>
-              )}
+                </div>
+                <button type="button" onClick={() => selectItem(null)} aria-label={copy.editor.close}>×</button>
+              </div>
+              <div className="inspector-finish-mode" role="group" aria-label={copy.editor.finishMode}>
+                <span>{copy.editor.finishMode}</span>
+                <div>
+                  <button type="button" className={selectedItem.exitMode !== 'fly-out' ? 'is-active' : ''} aria-pressed={selectedItem.exitMode !== 'fly-out'} title={copy.editor.stopHelp} onClick={() => setExitMode('stop')}>{copy.editor.stop}</button>
+                  <button type="button" className={selectedItem.exitMode === 'fly-out' ? 'is-active' : ''} aria-pressed={selectedItem.exitMode === 'fly-out'} title={copy.editor.flyOutHelp} onClick={() => setExitMode('fly-out')}>{copy.editor.flyOut}</button>
+                </div>
+              </div>
               <MotionCurveEditor
-                value={config.motion ?? DEFAULT_MOTION}
+                key={selectedItem.id}
+                value={selectedItem.motion ?? config.motion ?? DEFAULT_MOTION}
                 labels={copy.editor.motion}
                 onChange={updateMotion}
-                onPreview={replay}
               />
-              <button className="inspector-demo" type="button" onClick={restoreDemo}>{copy.editor.restoreDemo}</button>
+              <div className="inspector-actions">
+                <button className="is-primary" type="button" onClick={previewSelectedItem}>{copy.editor.motion.preview}</button>
+                <button type="button" onClick={() => updateMotion(DEFAULT_MOTION)}>{copy.editor.motion.reset}</button>
+                <button className="is-danger" type="button" onClick={() => deleteItem(selectedItem.id)}>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4.5 7h15M9 7V4.5h6V7m-9 0 .8 12.5h10.4L18 7M10 10.5v6m4-6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {copy.editor.delete}
+                </button>
+              </div>
             </aside>
           )}
 
-          <div className="scroll-cue" aria-hidden={editing}>
-            <span>{copy.scrollCue}</span>
-            <i>↓</i>
-          </div>
-        </div>
-      </section>
-
-      <section className="project-notes" aria-labelledby="how-it-works">
-        <div className="notes-intro">
-          <span>{copy.notes.eyebrow}</span>
-          <h2 id="how-it-works">{copy.notes.title}</h2>
-          <p>{copy.notes.description}</p>
-        </div>
-        <div className="notes-grid">
-          {copy.notes.cards.map((card, index) => (
-            <article key={card.title}>
-              <b>{String(index + 1).padStart(2, '0')}</b>
-              <h3>{card.title}</h3>
-              <p>{card.body}</p>
-            </article>
-          ))}
-        </div>
-        <div className="notes-footer">
-          <button type="button" onClick={restoreDemo}>{copy.notes.restoreDemo}</button>
-          <a href="https://github.com/SaiSai-me/float-up">{copy.notes.viewGithub}</a>
+          {fullPreviewRun !== null && (
+            <div className="playground-full-preview" aria-label={copy.toolbar.playPreview}>
+              <FloatUp ref={floatUpRef} config={config} assetBaseUrl={baseUrl} scroll={false} className="playground-preview" />
+            </div>
+          )}
         </div>
       </section>
 
@@ -486,6 +760,16 @@ export function Playground() {
             <p>{copy.drop.detail}</p>
           </div>
         </div>
+      )}
+      {isExportOpen && (
+        <ExportDialog
+          config={config}
+          copy={copy.exportDialog}
+          isProcessing={isProcessing}
+          failed={notice.key === 'exportFailed'}
+          onClose={closeExportDialog}
+          onDownload={downloadPackage}
+        />
       )}
     </main>
   )

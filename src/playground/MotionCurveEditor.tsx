@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   DEFAULT_MOTION,
@@ -19,18 +19,13 @@ type MotionCurveLabels = {
     linear: string
     easeOut: string
     smooth: string
-    overshoot: string
   }
-  controlPoint: (number: number) => string
-  preview: string
-  reset: string
 }
 
 type MotionCurveEditorProps = {
   value: FloatUpMotionConfig
   labels: MotionCurveLabels
   onChange: (value: FloatUpMotionConfig) => void
-  onPreview: () => void
 }
 
 const PRESETS = [
@@ -38,11 +33,10 @@ const PRESETS = [
   { key: 'linear', easing: { x1: 0, y1: 0, x2: 1, y2: 1 } },
   { key: 'easeOut', easing: { x1: 0.16, y1: 1, x2: 0.3, y2: 1 } },
   { key: 'smooth', easing: { x1: 0.65, y1: 0, x2: 0.35, y2: 1 } },
-  { key: 'overshoot', easing: { x1: 0.2, y1: 1.28, x2: 0.34, y2: 1 } },
 ] as const
 
-const Y_MIN = -0.5
-const Y_MAX = 1.5
+const Y_MIN = 0
+const Y_MAX = 1
 const PADDING_X = 22
 const PADDING_Y = 22
 
@@ -57,11 +51,22 @@ function pointMatches(left: FloatUpBezier, right: FloatUpBezier) {
     && Math.abs(left.y2 - right.y2) < 0.001
 }
 
-export function MotionCurveEditor({ value, labels, onChange, onPreview }: MotionCurveEditorProps) {
+export function MotionCurveEditor({ value, labels, onChange }: MotionCurveEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [durationDraft, setDurationDraft] = useState((value.durationMs / 1000).toFixed(1))
   const activePointRef = useRef<1 | 2 | null>(null)
   const valueRef = useRef(value)
   valueRef.current = value
+
+  useEffect(() => setDurationDraft((value.durationMs / 1000).toFixed(1)), [value.durationMs])
+
+  const commitDuration = () => {
+    const seconds = Number(durationDraft)
+    if (durationDraft.trim() !== '' && Number.isFinite(seconds)) {
+      onChange({ ...valueRef.current, durationMs: Math.round(clamp(seconds, 0.5, 30) * 1000) })
+    }
+    setDurationDraft((valueRef.current.durationMs / 1000).toFixed(1))
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -83,9 +88,9 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
       const mapX = (x: number) => PADDING_X + x * plotWidth
       const mapY = (y: number) => PADDING_Y + (Y_MAX - y) / (Y_MAX - Y_MIN) * plotHeight
 
-      context.fillStyle = '#f7f9ff'
+      context.fillStyle = '#f8f7f4'
       context.fillRect(0, 0, width, height)
-      context.strokeStyle = 'rgba(92, 116, 170, 0.13)'
+      context.strokeStyle = 'rgba(124, 117, 105, 0.16)'
       context.lineWidth = 1
       for (let index = 0; index <= 4; index += 1) {
         const x = PADDING_X + plotWidth * index / 4
@@ -94,7 +99,7 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
         context.lineTo(x, height - PADDING_Y)
         context.stroke()
       }
-      for (const y of [Y_MIN, 0, 0.5, 1, Y_MAX]) {
+      for (const y of [0, 0.25, 0.5, 0.75, 1]) {
         context.beginPath()
         context.moveTo(PADDING_X, mapY(y))
         context.lineTo(width - PADDING_X, mapY(y))
@@ -144,7 +149,7 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
         context.fillText(label, point.x, point.y - 13)
       }
 
-      context.fillStyle = '#7a87a4'
+      context.fillStyle = '#8b857b'
       context.font = '600 9px Inter, sans-serif'
       context.textAlign = 'left'
       context.fillText('0', PADDING_X, height - 6)
@@ -202,27 +207,12 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
     activePointRef.current = null
   }
 
-  const updateCoordinate = (key: keyof FloatUpBezier, nextValue: number) => {
-    const isX = key === 'x1' || key === 'x2'
-    onChange({
-      ...value,
-      easing: {
-        ...value.easing,
-        [key]: clamp(nextValue, isX ? 0 : Y_MIN, isX ? 1 : Y_MAX),
-      },
-    })
-  }
-
   return (
     <section className="motion-editor" aria-labelledby="motion-editor-title">
       <div className="motion-editor-heading">
-        <div>
-          <span>MOTION</span>
-          <h3 id="motion-editor-title">{labels.title}</h3>
-        </div>
-        <output>{(value.durationMs / 1000).toFixed(1)}{labels.seconds}</output>
+        <h3 id="motion-editor-title">{labels.title}</h3>
       </div>
-      <p className="motion-editor-description">{labels.description}</p>
+      <p className="visually-hidden">{labels.description}</p>
       <canvas
         ref={canvasRef}
         className="motion-curve-canvas"
@@ -236,17 +226,18 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
         onPointerCancel={stopDragging}
       />
 
-      <label className="motion-duration">
-        <span>{labels.duration}</span>
-        <input
-          type="range"
-          min="800"
-          max="6000"
-          step="100"
-          value={value.durationMs}
-          onChange={(event) => onChange({ ...value, durationMs: Number(event.target.value) })}
-        />
-      </label>
+      <div className="motion-parameters">
+        <div className="motion-parameter">
+          <div className="motion-parameter-heading">
+            <span>{labels.duration}</span>
+            <span className="motion-duration-value">
+              <input type="number" min="0.5" max="30" step="0.1" value={durationDraft} onChange={(event) => setDurationDraft(event.target.value)} onBlur={commitDuration} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} aria-label={`${labels.duration} (${labels.seconds})`} />
+              {labels.seconds}
+            </span>
+          </div>
+          <input type="range" min="500" max="30000" step="100" value={value.durationMs} onChange={(event) => onChange({ ...value, durationMs: Number(event.target.value) })} aria-label={labels.duration} />
+        </div>
+      </div>
 
       <span className="motion-field-label">{labels.presets}</span>
       <div className="motion-presets">
@@ -260,46 +251,6 @@ export function MotionCurveEditor({ value, labels, onChange, onPreview }: Motion
             {labels.presetNames[preset.key]}
           </button>
         ))}
-      </div>
-
-      <div className="motion-points">
-        {[1, 2].map((pointNumber) => {
-          const point = pointNumber as 1 | 2
-          return (
-            <fieldset key={point}>
-              <legend>{labels.controlPoint(point)}</legend>
-              {(['x', 'y'] as const).map((axis) => {
-                const key = `${axis}${point}` as keyof FloatUpBezier
-                return (
-                  <label key={key}>
-                    <span>{axis.toUpperCase()}</span>
-                    <input
-                      type="number"
-                      min={axis === 'x' ? 0 : Y_MIN}
-                      max={axis === 'x' ? 1 : Y_MAX}
-                      step="0.01"
-                      value={value.easing[key].toFixed(2)}
-                      onChange={(event) => updateCoordinate(key, Number(event.target.value))}
-                    />
-                  </label>
-                )
-              })}
-            </fieldset>
-          )
-        })}
-      </div>
-
-      <div className="motion-editor-actions">
-        <button type="button" className="is-primary" onClick={onPreview}>{labels.preview}</button>
-        <button
-          type="button"
-          onClick={() => onChange({
-            durationMs: DEFAULT_MOTION.durationMs,
-            easing: { ...DEFAULT_MOTION.easing },
-          })}
-        >
-          {labels.reset}
-        </button>
       </div>
     </section>
   )

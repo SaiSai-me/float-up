@@ -13,6 +13,10 @@ export type FloatUpItem = {
   width: number
   rotation: number
   spin: number
+  /** Stop at target, or pass through target and leave the stage in the travel direction. */
+  exitMode?: 'stop' | 'fly-out'
+  /** Per-item motion. Direction is the travel angle in screen coordinates: 270° rises from below. */
+  motion?: FloatUpMotionConfig & { directionDeg: number }
 }
 
 export type FloatUpReservedArea = {
@@ -48,6 +52,8 @@ export type FloatUpController = {
 
 export type FloatUpProps = {
   config: FloatUpConfig
+  /** Prefix for relative item sources, such as `ornaments/star.png`. */
+  assetBaseUrl?: string
   scroll?: false | {
     startOffsetPx?: number
     distanceVh?: number

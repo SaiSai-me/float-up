@@ -38,7 +38,6 @@ const ANCHORS = [
 ] as const
 
 const ROTATIONS = [-8, 7, -4, 10, -6, 5, -11, 8, -3, 12, -7, 4]
-const SPINS = [14, -12, 10, -15, 12, -9, 16, -13, 11, -14]
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -62,6 +61,7 @@ function keepOutsideReservedArea(
   height: number,
   reserved: FloatUpReservedArea,
 ) {
+  if (reserved.width === 0 || reserved.height === 0) return item
   const itemBox = { x: item.target.x, y: item.target.y, width: item.width, height }
   const reservedBox = {
     x: reserved.x + reserved.width / 2,
@@ -99,6 +99,10 @@ function resolveCollisions(
   items.forEach((sourceItem, index) => {
     const item = { ...sourceItem, target: { ...sourceItem.target } }
     const height = getItemHeight(item, metadata[index], stageAspectRatio)
+    item.target = {
+      x: clamp(item.target.x, item.width / 2 + 0.025, 1 - item.width / 2 - 0.025),
+      y: clamp(item.target.y, height / 2 + 0.025, 1 - height / 2 - 0.025),
+    }
     keepOutsideReservedArea(item, height, reserved)
 
     for (let pass = 0; pass < 10; pass += 1) {
@@ -143,7 +147,10 @@ export function createFloatUpLayout(
     const visibleHeightRatio = Math.max(0.08, image.visibleBounds.height / image.height)
     const visibleAspect = (image.width * visibleWidthRatio) / (image.height * visibleHeightRatio)
     const visibleWidth = clamp(Math.sqrt(0.014 * visibleAspect / stageAspectRatio), 0.065, 0.14)
-    const width = clamp((visibleWidth / visibleWidthRatio) * densityScale, 0.06, 0.2)
+    const preferredWidth = clamp((visibleWidth / visibleWidthRatio) * densityScale, 0.06, 0.2)
+    // A very tall image may need to be narrower than the usual 6% minimum.
+    const maxWidthForHeight = 0.9 * image.width / image.height / stageAspectRatio
+    const width = Math.min(preferredWidth, maxWidthForHeight)
     const anchor = ANCHORS[index % ANCHORS.length]
     const lap = Math.floor(index / ANCHORS.length)
 
@@ -157,7 +164,8 @@ export function createFloatUpLayout(
       },
       width,
       rotation: ROTATIONS[index % ROTATIONS.length],
-      spin: SPINS[index % SPINS.length],
+      spin: 0,
+      exitMode: 'stop',
     }
   })
 

@@ -7,6 +7,7 @@ import {
 import type { CSSProperties } from 'react'
 import type { FloatUpController, FloatUpProps } from './types'
 import { DEFAULT_MOTION, evaluateCubicBezier } from './easing'
+import { getEntryOffset } from './entry'
 import './float-up.css'
 
 function clamp01(value: number) {
@@ -14,7 +15,7 @@ function clamp01(value: number) {
 }
 
 export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function FloatUp(
-  { config, scroll, className = '', children },
+  { config, scroll, assetBaseUrl = '', className = '', children },
   forwardedRef,
 ) {
   const stageRef = useRef<HTMLDivElement>(null)
@@ -28,40 +29,53 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
     if (!stage) return
 
     const now = window.performance.now()
-    const motion = config.motion ?? DEFAULT_MOTION
-    let sourceProgress = 1
+    const defaultMotion = config.motion ?? DEFAULT_MOTION
+    const elapsed = replayStartedAtRef.current === undefined ? null : now - replayStartedAtRef.current
+    const maxDuration = config.items.length > 0
+      ? Math.max(...config.items.map((item) => item.motion?.durationMs ?? defaultMotion.durationMs))
+      : defaultMotion.durationMs
+    let scrollProgress = 1
 
     if (reduceMotionRef.current) {
-      sourceProgress = 1
       replayStartedAtRef.current = undefined
       replayHoldingRef.current = false
-    } else if (replayStartedAtRef.current !== undefined) {
-      sourceProgress = clamp01((now - replayStartedAtRef.current) / Math.max(1, motion.durationMs))
-      if (sourceProgress >= 1) {
-        replayStartedAtRef.current = undefined
-        replayHoldingRef.current = true
-      }
-    } else if (replayHoldingRef.current) {
-      sourceProgress = 1
-    } else if (scroll !== false) {
+    } else if (elapsed === null && !replayHoldingRef.current && scroll !== false) {
       const start = scroll?.startOffsetPx ?? 0
       const distance = window.innerHeight * (scroll?.distanceVh ?? 1.15)
-      sourceProgress = clamp01((window.scrollY - start) / Math.max(1, distance))
+      scrollProgress = clamp01((window.scrollY - start) / Math.max(1, distance))
     }
 
-    const progress = evaluateCubicBezier(sourceProgress, motion.easing)
+    const stageWidth = stage.clientWidth
     const stageHeight = stage.clientHeight
     const elements = stage.querySelectorAll<HTMLElement>('[data-float-up-item]')
 
-    elements.forEach((element) => {
-      const targetY = Number(element.dataset.targetY ?? 0.5) * stageHeight
-      const spin = Number(element.dataset.spin ?? 0)
-      const rotation = Number(element.dataset.rotation ?? 0)
-      const originY = stageHeight + 56
-      const rise = (originY - targetY) * (1 - progress)
-      const impactRotation = Math.sin(sourceProgress * Math.PI) * spin
-      element.style.transform = `translate3d(-50%, calc(-50% + ${rise}px), 0) rotate(${rotation + impactRotation}deg)`
+    elements.forEach((element, index) => {
+      const item = config.items[index]
+      if (!item) return
+      const motion = item.motion ?? defaultMotion
+      const sourceProgress = reduceMotionRef.current || replayHoldingRef.current
+        ? 1
+        : elapsed === null
+          ? clamp01(scrollProgress * maxDuration / Math.max(1, motion.durationMs))
+          : clamp01(elapsed / Math.max(1, motion.durationMs))
+      const progress = evaluateCubicBezier(sourceProgress, motion.easing)
+      const targetX = item.target.x * stageWidth
+      const targetY = item.target.y * stageHeight
+      const margin = Math.max(element.clientWidth, element.clientHeight) / 2 + 56
+      const directionDeg = item.motion?.directionDeg ?? 270
+      const entry = getEntryOffset(targetX, targetY, stageWidth, stageHeight, margin, directionDeg)
+      const exit = item.exitMode === 'fly-out' && !reduceMotionRef.current
+        ? getEntryOffset(targetX, targetY, stageWidth, stageHeight, margin, directionDeg + 180)
+        : { x: 0, y: 0 }
+      const offsetX = entry.x * (1 - progress) + exit.x * progress
+      const offsetY = entry.y * (1 - progress) + exit.y * progress
+      element.style.transform = `translate3d(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px), 0) rotate(${item.rotation}deg)`
     })
+
+    if (elapsed !== null && elapsed >= maxDuration) {
+      replayStartedAtRef.current = undefined
+      replayHoldingRef.current = true
+    }
 
     if (replayStartedAtRef.current !== undefined) {
       frameRef.current = window.requestAnimationFrame(update)
@@ -99,6 +113,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
     reduceMotionRef.current = media.matches
 
     const onScroll = () => {
+      if (scroll === false) return
       if (replayStartedAtRef.current !== undefined || replayHoldingRef.current) {
         replayStartedAtRef.current = undefined
         replayHoldingRef.current = false
@@ -120,7 +135,10 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       observer.disconnect()
       window.removeEventListener('scroll', onScroll)
       media.removeEventListener('change', onMotionChange)
-      if (frameRef.current !== undefined) window.cancelAnimationFrame(frameRef.current)
+      if (frameRef.current !== undefined) {
+        window.cancelAnimationFrame(frameRef.current)
+        frameRef.current = undefined
+      }
     }
   }, [config, scroll])
 
@@ -131,7 +149,9 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
           <img
             key={item.id}
             className="float-up-item"
-            src={item.src}
+            src={assetBaseUrl && !/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(item.src)
+              ? `${assetBaseUrl.replace(/\/?$/, '/')}${item.src.replace(/^\.\//, '')}`
+              : item.src}
             alt={item.alt ?? ''}
             aria-hidden={item.alt ? undefined : true}
             draggable={false}
@@ -147,7 +167,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
           />
         ))}
       </div>
-      <div
+      {children != null && <div
         className="float-up-reserved"
         style={{
           left: `${config.reservedArea.x * 100}%`,
@@ -157,7 +177,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
         }}
       >
         {children}
-      </div>
+      </div>}
     </div>
   )
 })
