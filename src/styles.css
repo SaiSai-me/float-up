@@ -940,6 +940,7 @@ input:focus-visible {
   bottom: 16px;
   display: flex;
   width: 380px;
+  max-width: calc(100% - 40px);
   flex-direction: column;
   overflow: hidden;
   padding: 24px;
@@ -954,6 +955,11 @@ input:focus-visible {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.5;
+}
+
+.editor-inspector.is-left {
+  right: auto;
+  left: 20px;
 }
 
 .inspector-heading {

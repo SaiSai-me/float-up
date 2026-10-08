@@ -178,6 +178,13 @@ type CenterCopy = (typeof messages)[Locale]['center']
 type Page = 'intro' | 'editor'
 type DropPoint = { x: number; y: number; aspectRatio: number }
 type ItemPreview = { item: FloatUpItem; run: number }
+type RectEdges = Pick<DOMRectReadOnly, 'left' | 'right' | 'top' | 'bottom'>
+
+function overlapArea(first: RectEdges, second: RectEdges) {
+  const width = Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left))
+  const height = Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top))
+  return width * height
+}
 
 function getPageFromUrl(): Page {
   return window.location.hash === '#/editor' ? 'editor' : 'intro'
@@ -241,6 +248,7 @@ export function Playground() {
   const [page, setPage] = useState<Page>(getPageFromUrl)
   const [fullPreviewRun, setFullPreviewRun] = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [inspectorSide, setInspectorSide] = useState<'left' | 'right'>('right')
   const [itemPreview, setItemPreview] = useState<ItemPreview | null>(null)
   const [errors, setErrors] = useState<Array<{ fileName: string; code: ImageFileErrorCode }>>([])
   const [isProcessing, setIsProcessing] = useState(false)
@@ -252,6 +260,8 @@ export function Playground() {
   const floatUpRef = useRef<FloatUpController>(null)
   const itemPreviewRef = useRef<FloatUpController>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const stageContainerRef = useRef<HTMLDivElement>(null)
+  const inspectorRef = useRef<HTMLElement>(null)
   const assetsRef = useRef(assets)
   const configRef = useRef(config)
   const isUsingDemoRef = useRef(true)
@@ -279,6 +289,57 @@ export function Playground() {
   } : null, [activeItemPreview, config.motion])
   const copy = messages[locale]
   const closeExportDialog = useCallback(() => setExportOpen(false), [])
+
+  const positionInspector = useCallback(() => {
+    const stage = stageContainerRef.current
+    const inspector = inspectorRef.current
+    const item = stage?.querySelector<HTMLElement>('.editor-item.is-selected')
+    if (!stage || !inspector || !item) return
+
+    const stageRect = stage.getBoundingClientRect()
+    const panelRect = inspector.getBoundingClientRect()
+    const itemRect = item.getBoundingClientRect()
+    const edge = 20
+    const gap = 16
+    const imageBounds = {
+      left: itemRect.left - gap,
+      right: itemRect.right + gap,
+      top: itemRect.top - gap,
+      bottom: itemRect.bottom + gap,
+    }
+    const panelBounds = (left: number) => ({
+      left,
+      right: left + panelRect.width,
+      top: panelRect.top,
+      bottom: panelRect.bottom,
+    })
+    const rightOverlap = overlapArea(imageBounds, panelBounds(stageRect.right - edge - panelRect.width))
+    const leftOverlap = overlapArea(imageBounds, panelBounds(stageRect.left + edge))
+    const switchThreshold = Math.max(200, itemRect.width * itemRect.height * 0.02)
+    setInspectorSide((current) => rightOverlap === 0 ? 'right'
+      : leftOverlap === 0 ? 'left'
+      : leftOverlap + switchThreshold < rightOverlap ? 'left'
+      : rightOverlap + switchThreshold < leftOverlap ? 'right'
+      : current)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!selectedItem || page !== 'editor') return
+    positionInspector()
+  }, [selectedItem?.id, selectedItem?.target.x, selectedItem?.target.y, selectedItem?.width, selectedItem?.rotation, page, positionInspector])
+
+  useEffect(() => {
+    if (!selectedItem || page !== 'editor') return
+    const stage = stageContainerRef.current
+    const inspector = inspectorRef.current
+    const item = stage?.querySelector<HTMLElement>('.editor-item.is-selected')
+    if (!stage || !inspector || !item) return
+    const observer = new ResizeObserver(positionInspector)
+    observer.observe(stage)
+    observer.observe(inspector)
+    observer.observe(item)
+    return () => observer.disconnect()
+  }, [selectedItem?.id, page, positionInspector])
 
   useEffect(() => {
     mountedRef.current = true
@@ -851,7 +912,7 @@ export function Playground() {
       )}
 
       <section className="playground-track" aria-label={copy.playgroundLabel}>
-        <div className="playground-sticky-stage">
+        <div ref={stageContainerRef} className="playground-sticky-stage">
           <EditorStage
             config={config}
             metadata={metadata}
@@ -871,7 +932,7 @@ export function Playground() {
           )}
 
           {selectedItem && (
-            <aside className="editor-inspector" aria-label={copy.editor.ariaLabel}>
+            <aside ref={inspectorRef} className={`editor-inspector${inspectorSide === 'left' ? ' is-left' : ''}`} aria-label={copy.editor.ariaLabel}>
               <div className="inspector-heading">
                 <div className="inspector-selected">
                   <img src={selectedItem.src} alt="" />
