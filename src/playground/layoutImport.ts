@@ -48,7 +48,8 @@ export function parseFloatUpConfig(value: unknown): FloatUpConfig | null {
       || !isFiniteNumber(item.width) || item.width <= 0 || item.width > 1
       || !isFiniteNumber(item.rotation) || !isFiniteNumber(item.spin)
       || (item.alt !== undefined && typeof item.alt !== 'string')
-      || (item.exitMode !== undefined && item.exitMode !== 'stop' && item.exitMode !== 'fly-out')) {
+      || (item.exitMode !== undefined && item.exitMode !== 'stop' && item.exitMode !== 'fly-out')
+      || (item.playMode !== undefined && item.playMode !== 'once' && item.playMode !== 'loop')) {
       return null
     }
     if (item.motion !== undefined) {
@@ -88,6 +89,7 @@ export function parseFloatUpConfig(value: unknown): FloatUpConfig | null {
       rotation: item.rotation,
       spin: 0,
       ...(item.exitMode !== undefined ? { exitMode: item.exitMode } : {}),
+      ...(item.playMode !== undefined ? { playMode: item.playMode } : {}),
       ...(item.motion ? { motion: {
         durationMs: item.motion.durationMs,
         directionDeg: item.motion.directionDeg,

@@ -15,6 +15,8 @@ export type FloatUpItem = {
   spin: number
   /** Stop at target, or pass through target and leave the stage in the travel direction. */
   exitMode?: 'stop' | 'fly-out'
+  /** Play once by default, or restart this item's flight after each duration. */
+  playMode?: 'once' | 'loop'
   /** Per-item motion. Direction is the travel angle in screen coordinates: 270° rises from below. */
   motion?: FloatUpMotionConfig & { directionDeg: number }
 }

@@ -1040,6 +1040,7 @@ input:focus-visible {
 }
 
 .inspector-finish-mode button.is-active { background: #232323; color: #fff; }
+.inspector-play-mode { margin-top: -10px; }
 
 .editor-direction-guide {
   position: absolute;

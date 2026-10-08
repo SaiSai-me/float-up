@@ -366,6 +366,7 @@ export function Playground() {
   useLayoutEffect(() => {
     if (!activeItemPreview || page !== 'editor') return
     itemPreviewRef.current?.replay()
+    if (activeItemPreview.item.playMode === 'loop' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const durationMs = activeItemPreview.item.motion?.durationMs ?? config.motion?.durationMs ?? DEFAULT_MOTION.durationMs
     const timeout = window.setTimeout(() => {
       setItemPreview((current) => current?.run === activeItemPreview.run ? null : current)
@@ -380,7 +381,9 @@ export function Playground() {
       config.motion?.durationMs ?? DEFAULT_MOTION.durationMs,
       ...config.items.map((item) => item.motion?.durationMs ?? 0),
     )
-    const timeout = window.setTimeout(() => {
+    const hasLoop = config.items.some((item) => item.playMode === 'loop')
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const timeout = hasLoop ? null : window.setTimeout(() => {
       setFullPreviewRun((current) => current === fullPreviewRun ? null : current)
       setNotice((current) => current.key === 'replaying' ? { key: 'intro' } : current)
     }, durationMs + 500)
@@ -389,7 +392,7 @@ export function Playground() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.clearTimeout(timeout)
+      if (timeout !== null) window.clearTimeout(timeout)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [fullPreviewRun, config, page])
@@ -652,9 +655,15 @@ export function Playground() {
   }
 
   const playFullPreview = () => {
+    if (fullPreviewRun !== null) {
+      setFullPreviewRun(null)
+      setNotice({ key: 'intro' })
+      return
+    }
     setItemPreview(null)
     setFullPreviewRun((current) => (current ?? 0) + 1)
-    setNotice({
+    setNotice(config.items.some((item) => item.playMode === 'loop')
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? { key: 'looping' } : {
       key: 'replaying',
       durationMs: Math.max((config.motion ?? DEFAULT_MOTION).durationMs, ...config.items.map((item) => item.motion?.durationMs ?? 0)),
     })
@@ -662,6 +671,10 @@ export function Playground() {
 
   const previewSelectedItem = () => {
     if (!selectedItem) return
+    if (activeItemPreview?.item.playMode === 'loop') {
+      setItemPreview(null)
+      return
+    }
     setItemPreview((current) => ({ item: selectedItem, run: (current?.run ?? 0) + 1 }))
   }
 
@@ -681,6 +694,13 @@ export function Playground() {
   const setExitMode = (exitMode: NonNullable<FloatUpItem['exitMode']>) => {
     if (!selectedItem || (selectedItem.exitMode ?? 'stop') === exitMode) return
     const nextItem = { ...selectedItem, exitMode }
+    updateSelected(() => nextItem)
+    setItemPreview((current) => ({ item: nextItem, run: (current?.run ?? 0) + 1 }))
+  }
+
+  const setPlayMode = (playMode: NonNullable<FloatUpItem['playMode']>) => {
+    if (!selectedItem || (selectedItem.playMode ?? 'once') === playMode) return
+    const nextItem = { ...selectedItem, playMode }
     updateSelected(() => nextItem)
     setItemPreview((current) => ({ item: nextItem, run: (current?.run ?? 0) + 1 }))
   }
@@ -805,8 +825,10 @@ export function Playground() {
             onChange={onFileChange}
           />
           <button className="button toolbar-add" type="button" disabled={isProcessing} onClick={() => fileInputRef.current?.click()} aria-label={copy.toolbar.addImages} title={copy.toolbar.addImages}>＋</button>
-          <button className="button toolbar-play" type="button" onClick={playFullPreview} disabled={config.items.length === 0} aria-label={copy.toolbar.playPreview} title={copy.toolbar.playPreview}>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.5 5.6c-.7-.45-1.6.1-1.6.9v11c0 .8.9 1.35 1.6.9l9-5.5c.7-.4.7-1.4 0-1.8l-9-5.5Z" fill="currentColor" /></svg>
+          <button className="button toolbar-play" type="button" onClick={playFullPreview} disabled={config.items.length === 0} aria-label={fullPreviewRun === null ? copy.toolbar.playPreview : copy.toolbar.stopPreview} title={fullPreviewRun === null ? copy.toolbar.playPreview : copy.toolbar.stopPreview}>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">{fullPreviewRun === null
+              ? <path d="M8.5 5.6c-.7-.45-1.6.1-1.6.9v11c0 .8.9 1.35 1.6.9l9-5.5c.7-.4.7-1.4 0-1.8l-9-5.5Z" fill="currentColor" />
+              : <rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" />}</svg>
           </button>
         </div>
         <h1 className="toolbar-title"><img src={`${baseUrl}brand/float-up-icon.png`} alt="" />float up</h1>
@@ -867,6 +889,13 @@ export function Playground() {
                   <button type="button" className={selectedItem.exitMode === 'fly-out' ? 'is-active' : ''} aria-pressed={selectedItem.exitMode === 'fly-out'} title={copy.editor.flyOutHelp} onClick={() => setExitMode('fly-out')}>{copy.editor.flyOut}</button>
                 </div>
               </div>
+              <div className="inspector-finish-mode inspector-play-mode" role="group" aria-label={copy.editor.playMode}>
+                <span>{copy.editor.playMode}</span>
+                <div>
+                  <button type="button" className={selectedItem.playMode !== 'loop' ? 'is-active' : ''} aria-pressed={selectedItem.playMode !== 'loop'} title={copy.editor.onceHelp} onClick={() => setPlayMode('once')}>{copy.editor.once}</button>
+                  <button type="button" className={selectedItem.playMode === 'loop' ? 'is-active' : ''} aria-pressed={selectedItem.playMode === 'loop'} title={copy.editor.loopHelp} onClick={() => setPlayMode('loop')}>{copy.editor.loop}</button>
+                </div>
+              </div>
               <MotionCurveEditor
                 key={selectedItem.id}
                 value={selectedItem.motion ?? config.motion ?? DEFAULT_MOTION}
@@ -874,7 +903,7 @@ export function Playground() {
                 onChange={updateMotion}
               />
               <div className="inspector-actions">
-                <button className="is-primary" type="button" onClick={previewSelectedItem}>{copy.editor.motion.preview}</button>
+                <button className="is-primary" type="button" onClick={previewSelectedItem}>{activeItemPreview?.item.playMode === 'loop' ? copy.editor.stopPreview : copy.editor.motion.preview}</button>
                 <button type="button" onClick={() => updateMotion(DEFAULT_MOTION)}>{copy.editor.motion.reset}</button>
                 <button className="is-danger" type="button" onClick={() => deleteItem(selectedItem.id)}>
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

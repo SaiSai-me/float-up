@@ -68,12 +68,14 @@ const RUNTIME = String.raw`(() => {
       this.frame = null
       this.replayStart = null
       this.hold = false
+      this.scrollLoopStart = null
       this.onScroll = () => {
         this.replayStart = null
         this.hold = false
         this.requestUpdate()
       }
       this.onMotionChange = () => this.requestUpdate()
+      this.onVisibilityChange = () => { if (!document.hidden) this.requestUpdate() }
       this.requestUpdate = () => {
         if (this.frame === null) this.frame = requestAnimationFrame(() => this.update())
       }
@@ -112,6 +114,7 @@ const RUNTIME = String.raw`(() => {
       this.stage = stage
       this.media = matchMedia('(prefers-reduced-motion: reduce)')
       this.media.addEventListener('change', this.onMotionChange)
+      document.addEventListener('visibilitychange', this.onVisibilityChange)
       this.observer = new ResizeObserver(this.requestUpdate)
       this.observer.observe(stage)
       window.addEventListener('scroll', this.onScroll, { passive: true })
@@ -121,6 +124,7 @@ const RUNTIME = String.raw`(() => {
     disconnectedCallback() {
       window.removeEventListener('scroll', this.onScroll)
       this.media?.removeEventListener('change', this.onMotionChange)
+      document.removeEventListener('visibilitychange', this.onVisibilityChange)
       this.observer?.disconnect()
       this.itemElements?.forEach((img) => img.removeEventListener('load', this.requestUpdate))
       if (this.frame !== null) cancelAnimationFrame(this.frame)
@@ -129,6 +133,7 @@ const RUNTIME = String.raw`(() => {
 
     replay() {
       this.hold = false
+      this.scrollLoopStart = null
       this.replayStart = performance.now()
       this.requestUpdate()
     }
@@ -138,21 +143,32 @@ const RUNTIME = String.raw`(() => {
       if (!this.stage) return
       const now = performance.now()
       const elapsed = this.replayStart === null ? null : now - this.replayStart
+      const hasLoop = config.items.some((item) => item.playMode === 'loop')
       const maxDuration = config.items.length
         ? Math.max(...config.items.map((item) => (item.motion || defaultMotion).durationMs))
         : defaultMotion.durationMs
       const anchor = getComputedStyle(this).position === 'sticky' ? this.parentElement || this : this
       const start = anchor.getBoundingClientRect().top + window.scrollY
       const scrollProgress = clamp((window.scrollY - start) / Math.max(1, window.innerHeight * 1.15))
+      const bounds = this.stage.getBoundingClientRect()
+      const scrollLoopActive = !this.media.matches && elapsed === null && !this.hold && hasLoop
+        && scrollProgress > 0 && bounds.bottom > 0 && bounds.top < window.innerHeight
+      if (scrollLoopActive && this.scrollLoopStart === null) this.scrollLoopStart = now
+      else if (!scrollLoopActive) this.scrollLoopStart = null
       const width = this.stage.clientWidth
       const height = this.stage.clientHeight
 
       config.items.forEach((item, index) => {
         const img = this.itemElements[index]
         const motion = item.motion || defaultMotion
+        const duration = Math.max(1, motion.durationMs)
         const source = this.media.matches || this.hold ? 1 : elapsed === null
-          ? clamp(scrollProgress * maxDuration / Math.max(1, motion.durationMs))
-          : clamp(elapsed / Math.max(1, motion.durationMs))
+          ? item.playMode === 'loop' && this.scrollLoopStart !== null
+            ? ((now - this.scrollLoopStart) % duration) / duration
+            : clamp(scrollProgress * maxDuration / duration)
+          : item.playMode === 'loop'
+            ? (elapsed % duration) / duration
+            : clamp(elapsed / duration)
         const progress = easing(source, motion.easing)
         const margin = Math.max(img.clientWidth, img.clientHeight) / 2 + 56
         const directionDeg = item.motion?.directionDeg ?? 270
@@ -168,8 +184,13 @@ const RUNTIME = String.raw`(() => {
         img.style.transform = 'translate3d(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px), 0) rotate(' + item.rotation + 'deg)'
       })
 
-      if (elapsed !== null && elapsed < maxDuration && !this.media.matches) this.requestUpdate()
-      else if (elapsed !== null) {
+      if (this.media.matches) {
+        this.replayStart = null
+        this.hold = false
+        this.scrollLoopStart = null
+      } else if ((elapsed !== null && (elapsed < maxDuration || hasLoop)) || scrollLoopActive) {
+        if (!document.hidden) this.requestUpdate()
+      } else if (elapsed !== null) {
         this.replayStart = null
         this.hold = true
       }
@@ -208,11 +229,11 @@ This package contains your edited transparent ornament scene. The runtime has no
 </section>
 \`\`\`
 
-The ornaments move as the page scrolls through the section. Each item either stops at its edited position or passes through it and leaves the stage, according to \`exitMode\`. The item's \`durationMs\` covers its whole flight. To start the complete animation without scrolling, call \`document.querySelector('${tagName}').replay()\`. To place your own content in the reserved area, add a child with \`slot="content"\`.
+The ornaments move as the page scrolls through the section. Each item either stops at its edited position or passes through it and leaves the stage, according to \`exitMode\`. \`playMode\` is \`once\` by default; \`loop\` restarts that item's flight after its \`durationMs\`. During scroll playback, loops run while the scene is visible. To start the complete animation without scrolling, call \`document.querySelector('${tagName}').replay()\`. To place your own content in the reserved area, add a child with \`slot="content"\`.
 
 The cubic Bézier curve changes only the speed along one path. Its control points stay within 0–1, so the image never passes an endpoint and moves back because of the curve.
 
-仅需复制 \`float-up.js\` 即可在网页中使用；图片已经内嵌。组件背景透明，不会覆盖网页背景。滚动页面时播放各元素的自定义动效：元素可停在设定位置，也可经过该位置后飞出画布；也可调用 \`replay()\` 主动播放。
+仅需复制 \`float-up.js\` 即可在网页中使用；图片已经内嵌。组件背景透明，不会覆盖网页背景。滚动页面时播放各元素的自定义动效：元素可停在设定位置，也可经过该位置后飞出画布；\`playMode\` 可设为一次性或循环，也可调用 \`replay()\` 主动播放。
 
 ## Files / 文件
 
@@ -233,7 +254,7 @@ This is a user-created transparent animation scene. Integrate it into a website 
 
 - Production entry: \`float-up.js\`, a dependency-free custom element named \`<${tagName}>\`. Images are embedded; do not upload \`ornaments/\` unless the user wants separate files.
 - Use the exact HTML snippet in \`README.md\`. The host element is transparent and needs an explicit height. A tall wrapper with a sticky host gives the scroll animation room to finish.
-- \`float-up-layout.json\` is the machine-readable source of positions, sizes, rotations, per-item direction, duration, cubic Bézier speed curve, and \`exitMode\`. \`stop\` ends at \`target\`; \`fly-out\` passes through \`target\` and continues offstage along \`directionDeg\`. Curve control points stay within 0–1, so speed editing cannot reverse the path. The imported images are in \`ornaments/\`; uncommon formats are converted to PNG.
+- \`float-up-layout.json\` is the machine-readable source of positions, sizes, rotations, per-item direction, duration, cubic Bézier speed curve, \`exitMode\`, and \`playMode\`. \`stop\` ends at \`target\`; \`fly-out\` passes through \`target\` and continues offstage along \`directionDeg\`. \`playMode: "loop"\` repeats that item's flight; missing or \`"once"\` plays once. Curve control points stay within 0–1, so speed editing cannot reverse the path. The imported images are in \`ornaments/\`; uncommon formats are converted to PNG.
 - For non-scroll playback, call the element's \`replay()\` method. The runtime respects \`prefers-reduced-motion\`.
 - If an edit to the motion or artwork is needed, re-import this ZIP into Float Up and export again. The generated JS includes base64 images and is not the best place to hand-edit parameters.
 - Keep the widget background transparent. Do not add a container background unless the user requests one.

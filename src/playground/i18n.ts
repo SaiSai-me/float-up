@@ -3,7 +3,7 @@ import type { ImageFileErrorCode } from './imageFiles'
 export type Locale = 'zh' | 'en'
 
 export type Notice = {
-  key: 'intro' | 'arranged' | 'replaying' | 'autoLayout' | 'demoRestored' | 'removed' | 'reset' | 'exporting' | 'exported' | 'exportFailed' | 'imported' | 'importFailed' | 'importMissingImages'
+  key: 'intro' | 'arranged' | 'replaying' | 'looping' | 'autoLayout' | 'demoRestored' | 'removed' | 'reset' | 'exporting' | 'exported' | 'exportFailed' | 'imported' | 'importFailed' | 'importMissingImages'
   count?: number
   durationMs?: number
 }
@@ -19,6 +19,7 @@ export const messages = {
       backIntro: 'Introduction',
       addImages: 'Add images or import package',
       playPreview: 'Play full animation',
+      stopPreview: 'Stop preview',
       exportPackage: 'Export',
     },
     exportDialog: {
@@ -32,7 +33,7 @@ export const messages = {
       formatTitle: 'ZIP package',
       formatDescription: 'A self-contained web component, editable source data, and handoff instructions.',
       runtime: 'Standalone web component with images embedded. This is the only file your website needs; no React dependency.',
-      layout: 'Positions, directions, end behaviors, and speed curves for re-editing.',
+      layout: 'Positions, directions, end behaviors, playback modes, and speed curves for re-editing.',
       ornaments: 'Images for future edits; uncommon formats are converted to PNG.',
       readme: 'Exact embed snippet and playback instructions.',
       agents: 'Integration notes for coding agents.',
@@ -47,6 +48,7 @@ export const messages = {
       intro: 'Try the sample, or add your own images.',
       arranged: (count: number) => `${count} image${count === 1 ? '' : 's'} arranged locally. Nothing was uploaded.`,
       replaying: (durationMs: number) => `Replaying the complete ${(durationMs / 1000).toFixed(1)} second motion.`,
+      looping: 'Looping elements will keep playing. Press Stop preview or Esc to return.',
       autoLayout: 'A fresh deterministic layout has been applied.',
       demoRestored: 'The original Float Up demo ornaments are back.',
       removed: 'Ornament removed from this layout.',
@@ -76,6 +78,12 @@ export const messages = {
     editor: {
       ariaLabel: 'Element motion settings',
       heading: 'Selected element',
+      playMode: 'Playback',
+      once: 'Once',
+      loop: 'Loop',
+      onceHelp: 'Play this element once and leave it at its end position.',
+      loopHelp: 'Repeat this element from the start after each flight.',
+      stopPreview: 'Stop preview',
       finishMode: 'End behavior',
       stop: 'Stop here',
       flyOut: 'Fly out',
@@ -131,6 +139,7 @@ export const messages = {
       backIntro: '返回介绍',
       addImages: '添加图片或导入动效包',
       playPreview: '播放完整动画',
+      stopPreview: '停止预览',
       exportPackage: '导出',
     },
     exportDialog: {
@@ -144,7 +153,7 @@ export const messages = {
       formatTitle: 'ZIP 压缩包',
       formatDescription: '包含独立网页组件、可编辑的配置数据和接入说明。',
       runtime: '图片已内嵌的独立网页组件。网站只需这个文件，无需 React。',
-      layout: '记录位置、方向、结束方式和速度曲线，方便再次编辑。',
+      layout: '记录位置、方向、结束方式、播放方式和速度曲线，方便再次编辑。',
       ornaments: '供后续修改的图片；少见格式会转换为 PNG。',
       readme: '网页接入代码和播放方法。',
       agents: '给编程 Agent 的接入说明。',
@@ -159,6 +168,7 @@ export const messages = {
       intro: '体验示例素材，或添加你自己的图片。',
       arranged: (count: number) => `已在本地排版 ${count} 张图片，没有上传任何文件。`,
       replaying: (durationMs: number) => `正在重播完整的 ${(durationMs / 1000).toFixed(1)} 秒动效。`,
+      looping: '循环元素会持续播放，点击停止预览或按 Esc 返回。',
       autoLayout: '已应用一组新的确定性自动布局。',
       demoRestored: '已恢复 Float Up 原始示例素材。',
       removed: '已从当前布局中移除这个元素。',
@@ -188,6 +198,12 @@ export const messages = {
     editor: {
       ariaLabel: '元素动效设置',
       heading: '所选元素',
+      playMode: '播放方式',
+      once: '一次性',
+      loop: '循环',
+      onceHelp: '播放一次后停在结束位置。',
+      loopHelp: '每次移动结束后从起点重新播放。',
+      stopPreview: '停止预览',
       finishMode: '结束方式',
       stop: '停在画布',
       flyOut: '飞出画布',
@@ -250,5 +266,6 @@ export function formatNotice(locale: Locale, notice: Notice) {
   if (notice.key === 'arranged') return copy.arranged(notice.count ?? 0)
   if (notice.key === 'imported') return copy.imported(notice.count ?? 0)
   if (notice.key === 'replaying') return copy.replaying(notice.durationMs ?? 2800)
+  if (notice.key === 'looping') return copy.looping
   return copy[notice.key]
 }

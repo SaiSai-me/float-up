@@ -22,6 +22,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
   const frameRef = useRef<number | undefined>(undefined)
   const replayStartedAtRef = useRef<number | undefined>(undefined)
   const replayHoldingRef = useRef(false)
+  const scrollLoopStartedAtRef = useRef<number | undefined>(undefined)
   const reduceMotionRef = useRef(false)
 
   const update = () => {
@@ -31,6 +32,7 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
     const now = window.performance.now()
     const defaultMotion = config.motion ?? DEFAULT_MOTION
     const elapsed = replayStartedAtRef.current === undefined ? null : now - replayStartedAtRef.current
+    const hasLoop = config.items.some((item) => item.playMode === 'loop')
     const maxDuration = config.items.length > 0
       ? Math.max(...config.items.map((item) => item.motion?.durationMs ?? defaultMotion.durationMs))
       : defaultMotion.durationMs
@@ -39,11 +41,19 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
     if (reduceMotionRef.current) {
       replayStartedAtRef.current = undefined
       replayHoldingRef.current = false
+      scrollLoopStartedAtRef.current = undefined
     } else if (elapsed === null && !replayHoldingRef.current && scroll !== false) {
       const start = scroll?.startOffsetPx ?? 0
       const distance = window.innerHeight * (scroll?.distanceVh ?? 1.15)
       scrollProgress = clamp01((window.scrollY - start) / Math.max(1, distance))
     }
+
+    const bounds = stage.getBoundingClientRect()
+    const scrollLoopActive = !reduceMotionRef.current && elapsed === null && !replayHoldingRef.current
+      && scroll !== false && hasLoop && scrollProgress > 0
+      && bounds.bottom > 0 && bounds.top < window.innerHeight
+    if (scrollLoopActive && scrollLoopStartedAtRef.current === undefined) scrollLoopStartedAtRef.current = now
+    else if (!scrollLoopActive) scrollLoopStartedAtRef.current = undefined
 
     const stageWidth = stage.clientWidth
     const stageHeight = stage.clientHeight
@@ -56,8 +66,12 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       const sourceProgress = reduceMotionRef.current || replayHoldingRef.current
         ? 1
         : elapsed === null
-          ? clamp01(scrollProgress * maxDuration / Math.max(1, motion.durationMs))
-          : clamp01(elapsed / Math.max(1, motion.durationMs))
+          ? item.playMode === 'loop' && scrollLoopStartedAtRef.current !== undefined
+            ? ((now - scrollLoopStartedAtRef.current) % Math.max(1, motion.durationMs)) / Math.max(1, motion.durationMs)
+            : clamp01(scrollProgress * maxDuration / Math.max(1, motion.durationMs))
+          : item.playMode === 'loop'
+            ? (elapsed % Math.max(1, motion.durationMs)) / Math.max(1, motion.durationMs)
+            : clamp01(elapsed / Math.max(1, motion.durationMs))
       const progress = evaluateCubicBezier(sourceProgress, motion.easing)
       const targetX = item.target.x * stageWidth
       const targetY = item.target.y * stageHeight
@@ -72,12 +86,12 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       element.style.transform = `translate3d(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px), 0) rotate(${item.rotation}deg)`
     })
 
-    if (elapsed !== null && elapsed >= maxDuration) {
+    if (elapsed !== null && elapsed >= maxDuration && !hasLoop) {
       replayStartedAtRef.current = undefined
       replayHoldingRef.current = true
     }
 
-    if (replayStartedAtRef.current !== undefined) {
+    if ((replayStartedAtRef.current !== undefined || scrollLoopActive) && !document.hidden) {
       frameRef.current = window.requestAnimationFrame(update)
     } else {
       frameRef.current = undefined
@@ -95,11 +109,13 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       if (reduceMotionRef.current) {
         replayStartedAtRef.current = undefined
         replayHoldingRef.current = false
+        scrollLoopStartedAtRef.current = undefined
         requestUpdate()
         return
       }
 
       replayHoldingRef.current = false
+      scrollLoopStartedAtRef.current = undefined
       replayStartedAtRef.current = window.performance.now()
       requestUpdate()
     },
@@ -124,17 +140,20 @@ export const FloatUp = forwardRef<FloatUpController, FloatUpProps>(function Floa
       reduceMotionRef.current = media.matches
       requestUpdate()
     }
+    const onVisibilityChange = () => { if (!document.hidden) requestUpdate() }
     const observer = new ResizeObserver(requestUpdate)
 
     observer.observe(stage)
     window.addEventListener('scroll', onScroll, { passive: true })
     media.addEventListener('change', onMotionChange)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     requestUpdate()
 
     return () => {
       observer.disconnect()
       window.removeEventListener('scroll', onScroll)
       media.removeEventListener('change', onMotionChange)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       if (frameRef.current !== undefined) {
         window.cancelAnimationFrame(frameRef.current)
         frameRef.current = undefined

@@ -29,8 +29,8 @@ The introduction has a looping field of floating illustrations. In the editor, s
 | | |
 | --- | --- |
 | **Direct editing** | Add or drop transparent and opaque images. Move them on the canvas; drag the handles to set direction, rotation, and size. |
-| **Per-element motion** | Set duration, a one-way cubic Bézier speed curve, and an end behavior: stop at the selected point or fly offstage. |
-| **In-place preview** | Replay one selected element or the entire composition. The full preview returns to the editing canvas when it finishes. |
+| **Per-element motion** | Set duration, a one-way cubic Bézier speed curve, once or loop playback, and an end behavior: stop at the selected point or fly offstage. |
+| **In-place preview** | Replay one selected element or the entire composition. One-shot previews return to the editing canvas automatically; loop previews can be stopped manually. |
 | **Portable export** | Download a transparent web component with embedded images, editable JSON, image assets, and instructions for coding agents. |
 
 Your images stay in the browser. The editor automatically saves images and motion settings in this browser's IndexedDB, so you can resume after closing or refreshing the page; clearing site data removes the draft. The editor targets desktop and accepts images your browser can decode; uncommon formats are converted to PNG for export. The runtime respects `prefers-reduced-motion`.
@@ -49,7 +49,7 @@ To keep editing, choose the ZIP with **+** or drop it onto the canvas. You can a
 | File | Purpose |
 | --- | --- |
 | `float-up.js` | Standalone web component with embedded images; the only runtime file your site needs. |
-| `float-up-layout.json` | Positions, sizes, directions, speed curves, and end behaviors. |
+| `float-up-layout.json` | Positions, sizes, directions, speed curves, end behaviors, and playback modes. |
 | `ornaments/` | Images for future edits; uncommon formats are saved as PNG. |
 | `README.md` | Exact embed snippet and playback instructions. |
 | `AGENTS.md` | Integration instructions for coding agents. |
