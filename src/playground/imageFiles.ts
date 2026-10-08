@@ -4,10 +4,11 @@ export type PlaygroundAsset = {
   metadata: FloatUpImageMetadata
   exportSrc: string
   objectUrl?: string
+  blob?: Blob
   fileName: string
 }
 
-export type ImageFileErrorCode = 'unsupported' | 'decode' | 'inspect' | 'opaque' | 'empty' | 'missing' | 'unknown'
+export type ImageFileErrorCode = 'decode' | 'inspect' | 'empty' | 'missing' | 'unknown'
 
 export class ImageFileError extends Error {
   readonly code: ImageFileErrorCode
@@ -30,12 +31,57 @@ export function getSafeFileStem(fileName: string, fallback: string) {
   return stem || fallback
 }
 
-function isSupported(file: File) {
-  const lowerName = file.name.toLowerCase()
-  return file.type === 'image/png'
-    || file.type === 'image/webp'
-    || lowerName.endsWith('.png')
-    || lowerName.endsWith('.webp')
+const portableImageTypes: Record<string, string> = {
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+  'image/x-icon': 'ico',
+  'image/vnd.microsoft.icon': 'ico',
+}
+
+const imageTypeByExtension: Record<string, string> = {
+  png: 'image/png',
+  webp: 'image/webp',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  jfif: 'image/jpeg',
+  gif: 'image/gif',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+}
+
+export function getImageMimeType(fileName: string) {
+  const extension = fileName.split('.').pop()?.toLowerCase()
+  return (extension && imageTypeByExtension[extension]) || 'image/png'
+}
+
+function getPortableExtension(file: File) {
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  if (extension && imageTypeByExtension[extension]) return extension
+  return portableImageTypes[file.type] ?? null
+}
+
+async function loadImage(file: File, objectUrl: string): Promise<ImageBitmap | HTMLImageElement> {
+  try {
+    return await createImageBitmap(file)
+  } catch {
+    const image = new Image()
+    image.src = objectUrl
+    await image.decode()
+    return image
+  }
+}
+
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not convert image')), 'image/png')
+  })
 }
 
 export async function inspectImageFile(
@@ -43,88 +89,89 @@ export async function inspectImageFile(
   index: number,
   occurrence: number,
 ): Promise<PlaygroundAsset> {
-  if (!isSupported(file)) {
-    throw new ImageFileError(file.name, 'unsupported')
-  }
-
-  let bitmap: ImageBitmap
+  let objectUrl = URL.createObjectURL(file)
+  let storedBlob: Blob = file
+  let image: ImageBitmap | HTMLImageElement
   try {
-    bitmap = await createImageBitmap(file)
+    image = await loadImage(file, objectUrl)
   } catch {
+    URL.revokeObjectURL(objectUrl)
     throw new ImageFileError(file.name, 'decode')
   }
 
-  const maxScanSize = 512
-  const scale = Math.min(1, maxScanSize / Math.max(bitmap.width, bitmap.height))
-  const scanWidth = Math.max(1, Math.round(bitmap.width * scale))
-  const scanHeight = Math.max(1, Math.round(bitmap.height * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = scanWidth
-  canvas.height = scanHeight
-  const context = canvas.getContext('2d', { willReadFrequently: true })
+  try {
+    const width = image instanceof HTMLImageElement ? image.naturalWidth : image.width
+    const height = image instanceof HTMLImageElement ? image.naturalHeight : image.height
+    if (!width || !height) throw new ImageFileError(file.name, 'inspect')
 
-  if (!context) {
-    bitmap.close()
-    throw new ImageFileError(file.name, 'inspect')
-  }
+    const maxScanSize = 512
+    const scale = Math.min(1, maxScanSize / Math.max(width, height))
+    const scanWidth = Math.max(1, Math.round(width * scale))
+    const scanHeight = Math.max(1, Math.round(height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = scanWidth
+    canvas.height = scanHeight
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new ImageFileError(file.name, 'inspect')
 
-  context.drawImage(bitmap, 0, 0, scanWidth, scanHeight)
-  const pixels = context.getImageData(0, 0, scanWidth, scanHeight).data
-  let hasTransparency = false
-  let minX = scanWidth
-  let minY = scanHeight
-  let maxX = -1
-  let maxY = -1
+    context.drawImage(image, 0, 0, scanWidth, scanHeight)
+    const pixels = context.getImageData(0, 0, scanWidth, scanHeight).data
+    let minX = scanWidth
+    let minY = scanHeight
+    let maxX = -1
+    let maxY = -1
 
-  for (let y = 0; y < scanHeight; y += 1) {
-    for (let x = 0; x < scanWidth; x += 1) {
-      const alpha = pixels[(y * scanWidth + x) * 4 + 3]
-      if (alpha < 250) hasTransparency = true
-      if (alpha > 8) {
-        minX = Math.min(minX, x)
-        minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x)
-        maxY = Math.max(maxY, y)
+    for (let y = 0; y < scanHeight; y += 1) {
+      for (let x = 0; x < scanWidth; x += 1) {
+        const alpha = pixels[(y * scanWidth + x) * 4 + 3]
+        if (alpha > 8) {
+          minX = Math.min(minX, x)
+          minY = Math.min(minY, y)
+          maxX = Math.max(maxX, x)
+          maxY = Math.max(maxY, y)
+        }
       }
     }
-  }
 
-  const width = bitmap.width
-  const height = bitmap.height
-  bitmap.close()
+    if (maxX < minX || maxY < minY) throw new ImageFileError(file.name, 'empty')
 
-  if (!hasTransparency) {
-    throw new ImageFileError(file.name, 'opaque')
-  }
+    const visibleBounds: FloatUpVisibleBounds = {
+      x: minX / scale,
+      y: minY / scale,
+      width: (maxX - minX + 1) / scale,
+      height: (maxY - minY + 1) / scale,
+    }
+    let extension = getPortableExtension(file)
+    if (!extension) {
+      const portableCanvas = document.createElement('canvas')
+      portableCanvas.width = width
+      portableCanvas.height = height
+      const portableContext = portableCanvas.getContext('2d')
+      if (!portableContext) throw new ImageFileError(file.name, 'inspect')
+      portableContext.drawImage(image, 0, 0)
+      const png = await canvasToPng(portableCanvas)
+      URL.revokeObjectURL(objectUrl)
+      objectUrl = URL.createObjectURL(png)
+      storedBlob = png
+      extension = 'png'
+    }
+    const safeStem = getSafeFileStem(file.name, `ornament-${index + 1}`)
+    const suffix = occurrence > 1 ? `-${occurrence}` : ''
+    const fileName = `${safeStem}${suffix}.${extension}`
+    const id = `${safeStem}${suffix}`
 
-  if (maxX < minX || maxY < minY) {
-    throw new ImageFileError(file.name, 'empty')
-  }
-
-  const visibleBounds: FloatUpVisibleBounds = {
-    x: minX / scale,
-    y: minY / scale,
-    width: (maxX - minX + 1) / scale,
-    height: (maxY - minY + 1) / scale,
-  }
-  const extension = file.type === 'image/webp' || file.name.toLowerCase().endsWith('.webp') ? 'webp' : 'png'
-  const safeStem = getSafeFileStem(file.name, `ornament-${index + 1}`)
-  const suffix = occurrence > 1 ? `-${occurrence}` : ''
-  const fileName = `${safeStem}${suffix}.${extension}`
-  const id = `${safeStem}${suffix}`
-  const objectUrl = URL.createObjectURL(file)
-
-  return {
-    metadata: {
-      id,
-      src: objectUrl,
-      width,
-      height,
-      visibleBounds,
-    },
-    exportSrc: `ornaments/${fileName}`,
-    objectUrl,
-    fileName,
+    return {
+      metadata: { id, src: objectUrl, width, height, visibleBounds },
+      exportSrc: `ornaments/${fileName}`,
+      objectUrl,
+      blob: storedBlob,
+      fileName,
+    }
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl)
+    throw error instanceof ImageFileError ? error : new ImageFileError(file.name, 'inspect')
+  } finally {
+    if ('close' in image) image.close()
   }
 }
 

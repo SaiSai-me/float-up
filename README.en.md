@@ -4,7 +4,7 @@
 
 <h1 align="center">Float Up</h1>
 
-<p align="center">Compose transparent image motion visually. Export a scene your website can use directly.</p>
+<p align="center">Compose image motion visually. Export a scene your website can use directly.</p>
 
 <p align="center">
   <a href="https://saisai-me.github.io/float-up/">Live demo</a>
@@ -28,12 +28,12 @@ The introduction has a looping field of floating illustrations. In the editor, s
 
 | | |
 | --- | --- |
-| **Direct editing** | Add or drop transparent PNG/WebP images. Move them on the canvas; drag the handles to set direction, rotation, and size. |
+| **Direct editing** | Add or drop transparent and opaque images. Move them on the canvas; drag the handles to set direction, rotation, and size. |
 | **Per-element motion** | Set duration, a one-way cubic Bézier speed curve, and an end behavior: stop at the selected point or fly offstage. |
 | **In-place preview** | Replay one selected element or the entire composition. The full preview returns to the editing canvas when it finishes. |
-| **Portable export** | Download a transparent web component with embedded images, editable JSON, originals, and instructions for coding agents. |
+| **Portable export** | Download a transparent web component with embedded images, editable JSON, image assets, and instructions for coding agents. |
 
-Your images stay in the browser. The editor targets desktop and accepts static PNG/WebP files. The runtime respects `prefers-reduced-motion`.
+Your images stay in the browser. The editor automatically saves images and motion settings in this browser's IndexedDB, so you can resume after closing or refreshing the page; clearing site data removes the draft. The editor targets desktop and accepts images your browser can decode; uncommon formats are converted to PNG for export. The runtime respects `prefers-reduced-motion`.
 
 ## Quick start
 
@@ -50,7 +50,7 @@ To keep editing, choose the ZIP with **+** or drop it onto the canvas. You can a
 | --- | --- |
 | `float-up.js` | Standalone web component with embedded images; the only runtime file your site needs. |
 | `float-up-layout.json` | Positions, sizes, directions, speed curves, and end behaviors. |
-| `ornaments/` | Original PNG/WebP images for future edits. |
+| `ornaments/` | Images for future edits; uncommon formats are saved as PNG. |
 | `README.md` | Exact embed snippet and playback instructions. |
 | `AGENTS.md` | Integration instructions for coding agents. |
 | `LICENSE.txt` | MIT license for the exported runtime. |

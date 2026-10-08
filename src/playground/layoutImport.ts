@@ -22,7 +22,7 @@ function normalizeEasing(easing: FloatUpBezier): FloatUpBezier {
 }
 
 export function getLayoutFileName(src: string) {
-  return /^\/?ornaments\/([a-z0-9][a-z0-9-]*\.(?:png|webp))$/.exec(src)?.[1] ?? null
+  return /^\/?ornaments\/([a-z0-9][a-z0-9-]*\.(?:png|webp|jpg|jpeg|jfif|gif|avif|bmp|svg|ico))$/.exec(src)?.[1] ?? null
 }
 
 export function parseFloatUpConfig(value: unknown): FloatUpConfig | null {

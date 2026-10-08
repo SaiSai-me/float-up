@@ -5,8 +5,8 @@
 <h1 align="center">Float Up</h1>
 
 <p align="center">
-  可视化制作透明图片动效，导出可直接嵌入网站的组件。<br />
-  A visual editor for transparent image motion, with a website-ready export.
+  可视化制作图片动效，导出可直接嵌入网站的组件。<br />
+  A visual editor for image motion, with a website-ready export.
 </p>
 
 <p align="center">
@@ -35,12 +35,12 @@ The introduction shows a looping field of floating illustrations. In the editor,
 
 | | |
 | --- | --- |
-| **直接编辑** | 添加或拖入透明 PNG/WebP；在画布上移动元素，并用周围的控件调整方向、旋转和尺寸。 |
+| **直接编辑** | 添加或拖入透明、不透明图片；在画布上移动元素，并用周围的控件调整方向、旋转和尺寸。 |
 | **定义动效** | 为每个元素设置时长、单向速度曲线，以及停在画布或持续飞出的结束方式。 |
 | **即时预览** | 单独播放选中元素，或点击顶栏播放按钮预览完整场景；播放后自动返回编辑画布。 |
-| **带走作品** | 导出透明背景的网页组件、可再次编辑的 JSON、原始图片和给 Agent 的接入说明。 |
+| **带走作品** | 导出透明背景的网页组件、可再次编辑的 JSON、图片素材和给 Agent 的接入说明。 |
 
-图片仅在浏览器本地处理，不会上传。网站面向桌面端，编辑器支持静态 PNG 和 WebP；运行时尊重 `prefers-reduced-motion`。
+图片仅在浏览器本地处理，不会上传。编辑器会自动将素材和动效参数保存到当前浏览器的 IndexedDB，关闭或刷新页面后可继续编辑；清除站点数据会删除草稿。网站面向桌面端，编辑器接受浏览器可解码的图片格式；少见格式会转为 PNG 用于导出。运行时尊重 `prefers-reduced-motion`。
 
 ## 快速开始 / Quick start
 
@@ -57,7 +57,7 @@ The introduction shows a looping field of floating illustrations. In the editor,
 | --- | --- |
 | `float-up.js` | 图片已内嵌的独立 Web Component；网站运行时只需要这个文件。 |
 | `float-up-layout.json` | 元素位置、尺寸、方向、速度曲线和结束方式。 |
-| `ornaments/` | 原始 PNG/WebP，便于后续修改。 |
+| `ornaments/` | 图片素材，便于后续修改；少见格式以 PNG 保存。 |
 | `README.md` | 可直接复制的接入代码与播放方式。 |
 | `AGENTS.md` | 给编程 Agent 的文件说明和集成步骤。 |
 | `LICENSE.txt` | 导出运行时代码的 MIT 许可证。 |

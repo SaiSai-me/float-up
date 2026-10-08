@@ -218,7 +218,7 @@ The cubic Bézier curve changes only the speed along one path. Its control point
 
 - \`float-up.js\`: standalone web component and embedded images; this is the only file required on the website.
 - \`float-up-layout.json\`: editable motion, layout, and image path data.
-- \`ornaments/\`: original PNG/WebP images for future editing or Agent handoff.
+- \`ornaments/\`: images for future editing or Agent handoff. Formats outside the common web image set are converted to PNG during import.
 - \`AGENTS.md\`: instructions for coding agents.
 - \`LICENSE.txt\`: MIT license for the generated runtime. Your own image rights remain yours.
 
@@ -233,7 +233,7 @@ This is a user-created transparent animation scene. Integrate it into a website 
 
 - Production entry: \`float-up.js\`, a dependency-free custom element named \`<${tagName}>\`. Images are embedded; do not upload \`ornaments/\` unless the user wants separate files.
 - Use the exact HTML snippet in \`README.md\`. The host element is transparent and needs an explicit height. A tall wrapper with a sticky host gives the scroll animation room to finish.
-- \`float-up-layout.json\` is the machine-readable source of positions, sizes, rotations, per-item direction, duration, cubic Bézier speed curve, and \`exitMode\`. \`stop\` ends at \`target\`; \`fly-out\` passes through \`target\` and continues offstage along \`directionDeg\`. Curve control points stay within 0–1, so speed editing cannot reverse the path. The PNG/WebP originals are in \`ornaments/\`.
+- \`float-up-layout.json\` is the machine-readable source of positions, sizes, rotations, per-item direction, duration, cubic Bézier speed curve, and \`exitMode\`. \`stop\` ends at \`target\`; \`fly-out\` passes through \`target\` and continues offstage along \`directionDeg\`. Curve control points stay within 0–1, so speed editing cannot reverse the path. The imported images are in \`ornaments/\`; uncommon formats are converted to PNG.
 - For non-scroll playback, call the element's \`replay()\` method. The runtime respects \`prefers-reduced-motion\`.
 - If an edit to the motion or artwork is needed, re-import this ZIP into Float Up and export again. The generated JS includes base64 images and is not the best place to hand-edit parameters.
 - Keep the widget background transparent. Do not add a container background unless the user requests one.

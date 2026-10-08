@@ -4,4 +4,4 @@ These transparent SVG illustrations are copied from [Microsoft Fluent Emoji](htt
 
 The ornament SVGs remain under the upstream [MIT License](LICENSE), copyright Microsoft Corporation. Local filenames use hyphens; the originals are in the upstream `assets/<name>/Color/<name>_color.svg` folders, with spaces in folder names and underscores in filenames. The selected names are Balloon, Butterfly, Cherry blossom, Comet, Crescent moon, Four leaf clover, Gem stone, Glowing star, Magic wand, Rainbow, Rocket, Shooting star, Sunflower, and Tropical fish.
 
-The artwork is used only for the introduction page background. The editor supports PNG and WebP uploads.
+The artwork is used only for the introduction page background. The editor accepts transparent and opaque images in formats the browser can decode.

@@ -20,11 +20,13 @@ import {
   type FloatUpReservedArea,
 } from '../float-up'
 import { EditorStage } from './EditorStage'
+import { readDraft, writeDraft, type StoredDraft } from './draftStorage'
 import { ExportDialog } from './ExportDialog'
 import { buildWebsitePackage } from './exportPackage'
 import { LandingBackdrop } from './LandingBackdrop'
 import { MotionCurveEditor } from './MotionCurveEditor'
 import {
+  getImageMimeType,
   getSafeFileStem,
   ImageFileError,
   inspectImageFile,
@@ -100,6 +102,77 @@ function makeDemoLayout(assets: PlaygroundAsset[]) {
   }
 }
 
+function createStoredDraft(assets: PlaygroundAsset[], config: FloatUpConfig, usingDemo: boolean): StoredDraft {
+  const assetsById = new Map(assets.map((asset) => [asset.metadata.id, asset]))
+  return {
+    version: 1,
+    usingDemo,
+    config: {
+      ...config,
+      items: config.items.map((item) => ({
+        ...item,
+        src: assetsById.get(item.id)?.exportSrc ?? item.src,
+      })),
+    },
+    assets: assets.map((asset) => ({
+      fileName: asset.fileName,
+      metadata: { ...asset.metadata, src: asset.exportSrc },
+      ...(asset.blob ? { blob: asset.blob } : {}),
+    })),
+  }
+}
+
+function restoreStoredDraft(value: unknown): { assets: PlaygroundAsset[]; config: FloatUpConfig; usingDemo: boolean } | null {
+  if (!value || typeof value !== 'object') return null
+  const draft = value as StoredDraft
+  const config = parseFloatUpConfig(draft.config)
+  if (draft.version !== 1 || !config || !Array.isArray(draft.assets)
+    || draft.assets.length !== config.items.length || typeof draft.usingDemo !== 'boolean') return null
+  if (!draft.assets.every((asset) => asset && typeof asset.fileName === 'string'
+    && asset.metadata && typeof asset.metadata.id === 'string'
+    && typeof asset.metadata.src === 'string'
+    && Number.isFinite(asset.metadata.width) && asset.metadata.width > 0
+    && Number.isFinite(asset.metadata.height) && asset.metadata.height > 0
+    && asset.metadata.visibleBounds
+    && Number.isFinite(asset.metadata.visibleBounds.x)
+    && Number.isFinite(asset.metadata.visibleBounds.y)
+    && Number.isFinite(asset.metadata.visibleBounds.width)
+    && Number.isFinite(asset.metadata.visibleBounds.height))) return null
+
+  const demosByFileName = new Map(createDemoAssets().map((asset) => [asset.fileName, asset]))
+  const storedById = new Map(draft.assets.map((asset) => [asset.metadata?.id, asset]))
+  const assets: PlaygroundAsset[] = []
+  try {
+    for (const item of config.items) {
+      const stored = storedById.get(item.id)
+      const fileName = getLayoutFileName(item.src)
+      if (!stored || !fileName || stored.fileName !== fileName || stored.metadata?.src !== item.src) {
+        throw new Error('Invalid saved asset')
+      }
+
+      const demo = demosByFileName.get(fileName)
+      if (!stored.blob && !demo) throw new Error('Missing saved image')
+      if (stored.blob && !(stored.blob instanceof Blob)) throw new Error('Invalid saved image')
+      const objectUrl = stored.blob ? URL.createObjectURL(stored.blob) : undefined
+      const source = objectUrl ?? demo!.metadata.src
+      assets.push({
+        fileName,
+        exportSrc: `ornaments/${fileName}`,
+        metadata: { ...stored.metadata, src: source },
+        ...(objectUrl ? { objectUrl, blob: stored.blob } : {}),
+      })
+    }
+    return {
+      assets,
+      config: { ...config, items: config.items.map((item, index) => ({ ...item, src: assets[index].metadata.src })) },
+      usingDemo: draft.usingDemo,
+    }
+  } catch {
+    revokeAssets(assets)
+    return null
+  }
+}
+
 type CenterCopy = (typeof messages)[Locale]['center']
 
 type Page = 'intro' | 'editor'
@@ -114,8 +187,7 @@ async function unpackWebsitePackage(file: File): Promise<File[]> {
   const archive = unzipSync(new Uint8Array(await file.arrayBuffer()), {
     filter: (entry) => entry.name === 'float-up-layout.json'
       ? entry.originalSize <= 2_000_000
-      : /^ornaments\/[a-z0-9][a-z0-9-]*\.(?:png|webp)$/.test(entry.name)
-        && entry.originalSize <= 25_000_000,
+      : entry.name === `ornaments/${getLayoutFileName(entry.name)}` && entry.originalSize <= 25_000_000,
   })
   const layout = archive['float-up-layout.json']
   if (!layout) throw new Error('Missing layout JSON')
@@ -126,7 +198,7 @@ async function unpackWebsitePackage(file: File): Promise<File[]> {
       .map(([name, bytes]) => new File(
         [new Uint8Array(bytes)],
         name.replace('ornaments/', ''),
-        { type: name.endsWith('.webp') ? 'image/webp' : 'image/png' },
+        { type: getImageMimeType(name) },
       )),
   ]
 }
@@ -175,6 +247,8 @@ export function Playground() {
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [isExportOpen, setExportOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>({ key: 'intro' })
+  const [draftReady, setDraftReady] = useState(false)
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false)
   const floatUpRef = useRef<FloatUpController>(null)
   const itemPreviewRef = useRef<FloatUpController>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -185,6 +259,9 @@ export function Playground() {
   const importGenerationRef = useRef(0)
   const pendingJobsRef = useRef(0)
   const jobQueueRef = useRef(Promise.resolve())
+  const draftSaveQueueRef = useRef(Promise.resolve())
+  const draftSaveTimerRef = useRef<number | null>(null)
+  const draftSnapshotRef = useRef<StoredDraft | null>(null)
   assetsRef.current = assets
   configRef.current = config
 
@@ -210,6 +287,63 @@ export function Playground() {
       revokeAssets(assetsRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void readDraft().then((value) => {
+      if (cancelled) return
+      const restored = value === undefined ? null : restoreStoredDraft(value)
+      if (restored) applyProject(restored.assets, restored.config, restored.usingDemo)
+      else if (value !== undefined) setDraftSaveFailed(true)
+      setDraftReady(true)
+    }).catch(() => {
+      if (!cancelled) {
+        setDraftSaveFailed(true)
+        setDraftReady(true)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const queueDraftSave = (draft: StoredDraft) => {
+    draftSaveQueueRef.current = draftSaveQueueRef.current.catch(() => {}).then(() => writeDraft(draft))
+    void draftSaveQueueRef.current.then(
+      () => { if (mountedRef.current) setDraftSaveFailed(false) },
+      () => { if (mountedRef.current) setDraftSaveFailed(true) },
+    )
+  }
+
+  useEffect(() => {
+    if (!draftReady) return
+    const snapshot = createStoredDraft(assets, config, isUsingDemoRef.current)
+    draftSnapshotRef.current = snapshot
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      draftSaveTimerRef.current = null
+      queueDraftSave(snapshot)
+    }, 150)
+    return () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+    }
+  }, [assets, config, draftReady])
+
+  useEffect(() => {
+    if (!draftReady) return
+    const flushDraft = () => {
+      if (draftSaveTimerRef.current === null || !draftSnapshotRef.current) return
+      window.clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+      queueDraftSave(draftSnapshotRef.current)
+    }
+    window.addEventListener('pagehide', flushDraft)
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushDraft()
+    }
+    document.addEventListener('visibilitychange', saveWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', flushDraft)
+      document.removeEventListener('visibilitychange', saveWhenHidden)
+    }
+  }, [draftReady])
 
   useEffect(() => {
     document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
@@ -613,6 +747,10 @@ export function Playground() {
     })
   }
 
+  if (!draftReady) {
+    return <main className="draft-loading" role="status" aria-busy="true">{copy.draftLoading}</main>
+  }
+
   if (page === 'intro') {
     return (
       <main className="landing-page">
@@ -635,6 +773,7 @@ export function Playground() {
             <CenterCard copy={copy.center} onStart={() => navigateTo('editor')} />
           </div>
         </section>
+        {draftSaveFailed && <p className="draft-storage-error" role="alert">{copy.draftSaveFailed}</p>}
       </main>
     )
   }
@@ -656,25 +795,28 @@ export function Playground() {
         <button className="toolbar-back" type="button" onClick={() => navigateTo('intro')} aria-label={copy.toolbar.backIntro} title={copy.toolbar.backIntro}>
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
-        <h1 className="toolbar-title"><img src={`${baseUrl}brand/float-up-icon.png`} alt="" />float up</h1>
         <div className="toolbar-actions">
           <input
             ref={fileInputRef}
             className="visually-hidden"
             type="file"
-            accept="image/png,image/webp,.png,.webp,.json,.zip,application/json,application/zip"
+            accept="image/*,.heic,.heif,.tif,.tiff,.json,.zip,application/json,application/zip"
             multiple
             onChange={onFileChange}
           />
           <button className="button toolbar-add" type="button" disabled={isProcessing} onClick={() => fileInputRef.current?.click()} aria-label={copy.toolbar.addImages} title={copy.toolbar.addImages}>＋</button>
           <button className="button toolbar-play" type="button" onClick={playFullPreview} disabled={config.items.length === 0} aria-label={copy.toolbar.playPreview} title={copy.toolbar.playPreview}>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l10-6.5L8 5.5Z" fill="currentColor" /></svg>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.5 5.6c-.7-.45-1.6.1-1.6.9v11c0 .8.9 1.35 1.6.9l9-5.5c.7-.4.7-1.4 0-1.8l-9-5.5Z" fill="currentColor" /></svg>
           </button>
+        </div>
+        <h1 className="toolbar-title"><img src={`${baseUrl}brand/float-up-icon.png`} alt="" />float up</h1>
+        <div className="toolbar-actions toolbar-actions-right">
           <button className="button toolbar-export" type="button" onClick={() => setExportOpen(true)} disabled={assets.length === 0 || isProcessing}>{copy.toolbar.exportPackage}</button>
         </div>
       </header>
 
       {notice.key !== 'intro' && <p className="toolbar-notice" role="status">{formatNotice(locale, notice)}</p>}
+      {draftSaveFailed && <p className="draft-storage-error" role="alert">{copy.draftSaveFailed}</p>}
 
       {errors.length > 0 && (
         <aside className="error-panel" aria-live="polite">

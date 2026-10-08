@@ -11,6 +11,8 @@ export type Notice = {
 export const messages = {
   en: {
     languageLabel: 'Language',
+    draftLoading: 'Restoring your local draft…',
+    draftSaveFailed: 'This browser could not save the draft. Export a ZIP to keep your work.',
     githubLabel: 'Float Up on GitHub',
     landingLabel: 'Float Up introduction',
     toolbar: {
@@ -31,7 +33,7 @@ export const messages = {
       formatDescription: 'A self-contained web component, editable source data, and handoff instructions.',
       runtime: 'Standalone web component with images embedded. This is the only file your website needs; no React dependency.',
       layout: 'Positions, directions, end behaviors, and speed curves for re-editing.',
-      ornaments: 'Original PNG/WebP images for future edits.',
+      ornaments: 'Images for future edits; uncommon formats are converted to PNG.',
       readme: 'Exact embed snippet and playback instructions.',
       agents: 'Integration notes for coding agents.',
       license: 'MIT license for the generated runtime.',
@@ -42,7 +44,7 @@ export const messages = {
       error: 'Packaging failed. You can try again.',
     },
     notice: {
-      intro: 'Try the sample, or add your own transparent images.',
+      intro: 'Try the sample, or add your own images.',
       arranged: (count: number) => `${count} image${count === 1 ? '' : 's'} arranged locally. Nothing was uploaded.`,
       replaying: (durationMs: number) => `Replaying the complete ${(durationMs / 1000).toFixed(1)} second motion.`,
       autoLayout: 'A fresh deterministic layout has been applied.',
@@ -59,10 +61,8 @@ export const messages = {
     errors: {
       heading: 'Some images were skipped',
       dismiss: 'Dismiss errors',
-      unsupported: 'only transparent PNG and WebP files are supported.',
-      decode: 'the browser could not decode this image.',
+      decode: 'the browser could not decode this image format.',
       inspect: 'this browser cannot inspect the image.',
-      opaque: 'no transparent pixels were found.',
       empty: 'the image appears to be fully transparent.',
       missing: 'is required by the imported layout.',
       unknown: 'unable to inspect this image.',
@@ -117,12 +117,14 @@ export const messages = {
       },
     },
     drop: {
-      title: 'Drop transparent images',
-      detail: 'PNG or WebP · processed locally',
+      title: 'Drop images',
+      detail: 'Transparent or opaque · processed locally',
     },
   },
   zh: {
     languageLabel: '语言',
+    draftLoading: '正在恢复本地草稿…',
+    draftSaveFailed: '浏览器无法保存草稿，请导出 ZIP 保存作品。',
     githubLabel: '在 GitHub 查看 Float Up',
     landingLabel: 'Float Up 介绍',
     toolbar: {
@@ -143,7 +145,7 @@ export const messages = {
       formatDescription: '包含独立网页组件、可编辑的配置数据和接入说明。',
       runtime: '图片已内嵌的独立网页组件。网站只需这个文件，无需 React。',
       layout: '记录位置、方向、结束方式和速度曲线，方便再次编辑。',
-      ornaments: '原始 PNG/WebP 图片，供后续修改使用。',
+      ornaments: '供后续修改的图片；少见格式会转换为 PNG。',
       readme: '网页接入代码和播放方法。',
       agents: '给编程 Agent 的接入说明。',
       license: '生成组件的 MIT 许可证。',
@@ -154,7 +156,7 @@ export const messages = {
       error: '打包失败，可重试。',
     },
     notice: {
-      intro: '体验示例素材，或添加你自己的透明图片。',
+      intro: '体验示例素材，或添加你自己的图片。',
       arranged: (count: number) => `已在本地排版 ${count} 张图片，没有上传任何文件。`,
       replaying: (durationMs: number) => `正在重播完整的 ${(durationMs / 1000).toFixed(1)} 秒动效。`,
       autoLayout: '已应用一组新的确定性自动布局。',
@@ -171,10 +173,8 @@ export const messages = {
     errors: {
       heading: '部分图片已跳过',
       dismiss: '关闭错误提示',
-      unsupported: '仅支持带透明背景的 PNG 和 WebP 文件。',
-      decode: '浏览器无法解码这张图片。',
+      decode: '浏览器无法解码这种图片格式。',
       inspect: '当前浏览器无法检查这张图片。',
-      opaque: '没有检测到透明像素。',
       empty: '这张图片似乎完全透明。',
       missing: '导入布局需要这张图片。',
       unknown: '无法检查这张图片。',
@@ -229,8 +229,8 @@ export const messages = {
       },
     },
     drop: {
-      title: '放下透明图片',
-      detail: 'PNG 或 WebP · 仅在本地处理',
+      title: '放下图片',
+      detail: '透明或不透明 · 仅在本地处理',
     },
   },
 } as const
